@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgis/postgis:16-3.5
+    environment:
+      POSTGRES_DB: naertur
+      POSTGRES_USER: naertur
+      POSTGRES_PASSWORD: naertur
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U naertur -d naertur"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://naertur:naertur@db:5432/naertur
+      MET_USER_AGENT: NaerTur/0.1 local-dev@example.com
+      MOROTUR_BASE_URL: https://morotur.no
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+volumes:
+  postgres-data:
+

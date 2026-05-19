@@ -1,0 +1,152 @@
+from __future__ import annotations
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.config import get_settings
+from app.db.models import Hike
+from app.schemas import SearchRequest, SearchResponse, TransportResult
+from app.services.geo import haversine_meters, trailhead_from_geojson
+from app.services.hikes import hike_summary
+from app.services.randomizer import Candidate, choose_candidate
+from app.services.safety import SafetyService
+
+
+class SearchService:
+    def __init__(self, safety_service: SafetyService | None = None) -> None:
+        self.safety_service = safety_service or SafetyService()
+
+    async def random_hike(
+        self,
+        session: AsyncSession,
+        request: SearchRequest,
+    ) -> SearchResponse | None:
+        hikes = await self.load_hikes(session, request)
+        preliminary = self.preliminary_candidates(hikes, request)
+        preliminary = preliminary[: get_settings().search_safety_candidate_limit]
+
+        candidates: list[Candidate] = []
+        for hike, distance, reasons in preliminary:
+            safety = await self.safety_service.evaluate_hike(session, hike)
+            if safety.status != "recommended_today":
+                continue
+            candidates.append(
+                Candidate(
+                    hike=hike,
+                    safety=safety,
+                    distance_from_user_meters=distance,
+                    match_reasons=reasons,
+                )
+            )
+        selected = choose_candidate(candidates, request)
+        if selected is None:
+            return None
+        return SearchResponse(
+            hike=hike_summary(selected.hike),
+            safety=selected.safety,
+            transport=self.transport_result(request, selected.distance_from_user_meters, selected.hike),
+            matchReasons=selected.match_reasons,
+            rejectedReasons=[],
+        )
+
+    async def load_hikes(self, session: AsyncSession, request: SearchRequest) -> list[Hike]:
+        stmt = select(Hike).options(selectinload(Hike.geometry)).where(Hike.county == "Møre og Romsdal")
+        if request.difficulty:
+            stmt = stmt.where(Hike.difficulty.in_(request.difficulty))
+        if request.rejected_hike_ids:
+            stmt = stmt.where(Hike.id.not_in(request.rejected_hike_ids))
+        result = await session.scalars(stmt)
+        return list(result)
+
+    def preliminary_candidates(
+        self, hikes: list[Hike], request: SearchRequest
+    ) -> list[tuple[Hike, float | None, list[str]]]:
+        candidates: list[tuple[Hike, float | None, list[str]]] = []
+        for hike in hikes:
+            reasons: list[str] = []
+            if not self.matches_length(hike, request):
+                continue
+            if not self.matches_tags(hike, request):
+                continue
+            if not self.matches_avoid(hike, request):
+                continue
+            distance = self.distance_from_user(hike, request)
+            if distance is not None and not self.within_transport_radius(distance, request):
+                continue
+            if request.difficulty:
+                reasons.append("difficulty_match")
+            if request.tags:
+                reasons.append("tag_match")
+            if request.length_bucket:
+                reasons.append("length_match")
+            if distance is not None:
+                reasons.append("within_travel_radius")
+            candidates.append((hike, distance, reasons))
+        return sorted(candidates, key=lambda item: item[1] if item[1] is not None else 0)
+
+    @staticmethod
+    def matches_length(hike: Hike, request: SearchRequest) -> bool:
+        if request.length_bucket is None or hike.distance_meters is None:
+            return True
+        if request.length_bucket == "under_5km":
+            return hike.distance_meters < 5_000
+        if request.length_bucket == "5_10km":
+            return 5_000 <= hike.distance_meters <= 10_000
+        return hike.distance_meters > 10_000
+
+    @staticmethod
+    def matches_tags(hike: Hike, request: SearchRequest) -> bool:
+        requested = set(request.tags)
+        if not requested:
+            return True
+        return requested.issubset(set(hike.tags))
+
+    @staticmethod
+    def matches_avoid(hike: Hike, request: SearchRequest) -> bool:
+        if "steep" in request.avoid and "steep" in hike.tags:
+            return False
+        return True
+
+    @staticmethod
+    def distance_from_user(hike: Hike, request: SearchRequest) -> float | None:
+        if request.location is None or hike.geometry is None:
+            return None
+        trailhead = trailhead_from_geojson(hike.geometry.route_geojson)
+        if trailhead is None:
+            return None
+        return haversine_meters(request.location.lat, request.location.lon, trailhead[0], trailhead[1])
+
+    @staticmethod
+    def within_transport_radius(distance_meters: float, request: SearchRequest) -> bool:
+        if request.max_travel_minutes is None:
+            return True
+        meters_per_minute = {
+            "car": 700,
+            "walk": 80,
+            "public_transport": 500,
+        }[request.transport]
+        return distance_meters <= request.max_travel_minutes * meters_per_minute
+
+    @staticmethod
+    def transport_result(
+        request: SearchRequest, distance_meters: float | None, hike: Hike
+    ) -> TransportResult:
+        estimated = None
+        reasons: list[str] = []
+        if distance_meters is not None:
+            meters_per_minute = {"car": 700, "walk": 80, "public_transport": 500}[request.transport]
+            estimated = max(1, round(distance_meters / meters_per_minute))
+        status = "estimated"
+        if request.transport == "public_transport":
+            status = "unverified_until_entur"
+            reasons.append("entur_not_enabled_in_backend_v1")
+            if "public_transport_possible" in hike.tags:
+                reasons.append("source_mentions_public_transport")
+        return TransportResult(
+            mode=request.transport,
+            estimatedMinutes=estimated,
+            status=status,
+            reasons=reasons,
+        )
+
