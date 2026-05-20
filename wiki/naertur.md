@@ -305,7 +305,7 @@ type Hike = {
   titleEn?: string;
   municipality: string;
   county: string;
-  difficulty: "easy" | "medium" | "hard" | "expert";
+  difficulty: "easy" | "medium" | "hard";
   distanceMeters?: number;
   durationMinutes?: number;
   ascentMeters?: number;
@@ -349,7 +349,6 @@ Example request:
     "lat": 62.4722,
     "lon": 6.1549
   },
-  "language": "no",
   "difficulty": ["easy", "medium"],
   "maxTravelMinutes": 45,
   "transport": "public_transport",

@@ -32,7 +32,6 @@ curl -X POST http://127.0.0.1:8000/api/search/random \
   -H 'Content-Type: application/json' \
   -d '{
     "location": {"lat": 63.034478, "lon": 7.669680},
-    "language": "no",
     "difficulty": ["easy", "medium"],
     "maxTravelMinutes": 45,
     "transport": "car",
@@ -47,6 +46,19 @@ curl -X POST http://127.0.0.1:8000/api/search/random \
 
 - No account/user table is created.
 - Rejected hike IDs are request input only and should be stored by the frontend locally.
-- MET Locationforecast requires a descriptive `User-Agent`; set `MET_USER_AGENT` before production use.
-- Entur and NVE are intentionally deferred until after this backend slice is stable.
+- MET Locationforecast requires a descriptive `User-Agent`; set `MET_USER_AGENT` to a real contact email before first run (values containing `example.com` are rejected).
+- NVE avalanche safety is wired for Møre og Romsdal regions (Sunnmøre, Romsdal, Trollheimen, Indre Fjordane); trailheads outside these boxes degrade to `check_conditions`.
+- Entur public transport is still stubbed (`transport.status="unverified_until_entur"` for `public_transport` mode).
+
+## Frontend
+
+A mobile-first PWA lives under [`frontend/`](frontend/README.md). It ships with **two complete design variants** — Moss (warm fjord scenes) and Trail Map (editorial topographic) — switchable via env (`VITE_VARIANT=moss|trail|random`), URL (`?variant=…`), or an in-dev switcher. Set `VITE_VARIANT=random` for a per-page-load coin flip A/B. It ships with a 5-hike mock pool so you can run it without the backend; flip `VITE_USE_MOCK=false` in `frontend/.env` to call this API instead.
+
+```bash
+cd frontend
+npm install
+npm run dev   # http://localhost:5173
+```
+
+See `frontend/README.md` for env flags, scripts, and the design-handoff reference.
 

@@ -61,7 +61,6 @@ def sample_hike(sample_geojson: dict) -> Hike:
         duration_minutes=120,
         season_months=[3, 4, 5, 6, 7, 8, 9, 10, 11],
         tags=["viewpoint", "mountain", "not_steep", "under_5km"],
-        quality_score=100,
     )
     hike.geometry = HikeGeometry(
         hike_id=hike.id,

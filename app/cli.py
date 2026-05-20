@@ -8,13 +8,12 @@ from app.services.morotur import MoroturClient, MoroturImporter
 
 
 async def import_morotur(route_ids: list[int], limit: int) -> None:
-    client = MoroturClient()
-    importer = MoroturImporter(client)
-    async with AsyncSessionLocal() as session:
-        if not route_ids:
-            summaries = await client.discover_routes(limit=limit)
-            route_ids = [item.id for item in summaries]
-        result = await importer.import_routes(session, route_ids)
+    async with MoroturClient() as client:
+        importer = MoroturImporter(client)
+        async with AsyncSessionLocal() as session:
+            if not route_ids:
+                route_ids = await client.discover_routes(limit=limit)
+            result = await importer.import_routes(session, route_ids)
     print(result)
 
 
@@ -33,4 +32,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -3,23 +3,30 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-Difficulty = Literal["easy", "medium", "hard", "expert"]
-Language = Literal["no", "en"]
+Difficulty = Literal["easy", "medium", "hard"]
 LengthBucket = Literal["under_5km", "5_10km", "10km_plus"]
 TransportMode = Literal["car", "public_transport", "walk"]
 SafetyStatus = Literal["recommended_today", "check_conditions", "not_recommended_now"]
 
 
+# Shared config — all schemas accept and emit both snake_case (Python) and
+# camelCase (wire) names. Combined with response_model_by_alias=True on
+# routes, this gives a uniformly camelCase HTTP surface without per-route
+# adapter code on the frontend.
+_API_CONFIG = ConfigDict(populate_by_name=True)
+
+
 class Location(BaseModel):
+    model_config = _API_CONFIG
     lat: float = Field(ge=-90, le=90)
     lon: float = Field(ge=-180, le=180)
 
 
 class SearchRequest(BaseModel):
+    model_config = _API_CONFIG
     location: Location | None = None
-    language: Language = "no"
     difficulty: list[Difficulty] = Field(default_factory=list)
     max_travel_minutes: int | None = Field(default=None, alias="maxTravelMinutes", ge=1, le=240)
     transport: TransportMode = "car"
@@ -30,12 +37,14 @@ class SearchRequest(BaseModel):
 
 
 class SafetyResult(BaseModel):
+    model_config = _API_CONFIG
     status: SafetyStatus
     reasons: list[str]
     advisory: str = "Recommended based on available data. Always check local conditions."
 
 
 class TransportResult(BaseModel):
+    model_config = _API_CONFIG
     mode: TransportMode
     estimated_minutes: int | None = Field(default=None, alias="estimatedMinutes")
     status: str
@@ -43,6 +52,7 @@ class TransportResult(BaseModel):
 
 
 class HikeSummary(BaseModel):
+    model_config = _API_CONFIG
     id: UUID
     source: str
     source_id: str = Field(alias="sourceId")
@@ -58,16 +68,8 @@ class HikeSummary(BaseModel):
     trailhead: Location | None = None
 
 
-class HikeDetail(HikeSummary):
-    summary: str | None = None
-    description: str | None = None
-    municipalities: list[str]
-    season_months: list[int] = Field(alias="seasonMonths")
-    route_geojson: dict | None = Field(default=None, alias="routeGeojson")
-    transport_notes: str | None = Field(default=None, alias="transportNotes")
-
-
 class SearchResponse(BaseModel):
+    model_config = _API_CONFIG
     hike: HikeSummary
     safety: SafetyResult
     transport: TransportResult
@@ -76,11 +78,13 @@ class SearchResponse(BaseModel):
 
 
 class ImportMoroturRequest(BaseModel):
+    model_config = _API_CONFIG
     route_ids: list[int] = Field(default_factory=list, alias="routeIds")
     limit: int = Field(default=25, ge=1, le=500)
 
 
 class ImportMoroturResponse(BaseModel):
+    model_config = _API_CONFIG
     imported: int
     failed: int
     route_ids: list[int] = Field(alias="routeIds")

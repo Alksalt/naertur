@@ -17,7 +17,7 @@ class Candidate:
 
 def score_candidate(candidate: Candidate, request: SearchRequest) -> int:
     hike = candidate.hike
-    score = hike.quality_score
+    score = 0
     requested_tags = set(request.tags)
     score += len(requested_tags.intersection(hike.tags)) * 12
     if "not_steep" in hike.tags and "steep" in request.avoid:
