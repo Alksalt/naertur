@@ -1,6 +1,6 @@
 # Handoff — NærTur frontend · v2 "Trail Map"
 
-> Reference design for the NærTur "one tap, get a nearby hike" picker — Norwegian-first, mobile-focused PWA. Editorial topographic direction, vermillion accent, spring-physics motion.
+> Reference design for the NærTur "one tap, get a nearby hike" picker — Norwegian-first, mobile-focused PWA. Editorial topographic direction, single-accent color system (default Brick; original Vermillion + 4 other presets available), spring-physics motion.
 > Backend repo this design pairs with: [`Alksalt/naertur`](https://github.com/Alksalt/naertur).
 
 ---
@@ -36,7 +36,7 @@ The v2 direction commits to:
 
 1. **Topographic maps as the visual language**, not stylized scene illustrations. The hike *is* a map — make the map the hero.
 2. **Editorial / printed-guidebook tone** — mono callsigns, numbered sections, hairline rules, factual stats up front. Feels like a paper hiking guide rather than a feed app.
-3. **Single bold accent** (vermillion red `#C8242C` — Norwegian flag red) on warm paper instead of two-color moss + sunset. Confident, recognizable.
+3. **Single bold accent** on warm paper instead of two-color moss + sunset. Confident, recognizable. *(Originally `#C8242C` vermillion / Norwegian-flag red; the **default has since been softened to `Brick #A04A3E`** following stakeholder feedback — see §5.1 Accent overlay. The original vermillion is still available as a preset.)*
 4. **Spring-physics motion** following Google's [Material 3 Expressive](https://m3.material.io/blog/building-with-m3-expressive) (2025) research — bouncier interactions, contour lines and trails *draw on*, numbers count up, stagger reveals at ~60–90ms intervals.
 5. **Sharper geometry** — rectangular cards & 4–6px corners instead of pill everything.
 
@@ -337,6 +337,27 @@ True near-black ground (`#0E0D0B`), not just inverted. `--card` is `#1B1813` (a 
 #### Fjord (alt)
 
 Cool blue-grey paper (`#E8EDEC`), slightly more saturated, `--vermillion` desaturated to `#B23222` for a muted Scandinavian-coast feel. Contour lines shift to teal-grey. Use when the brand wants a colder/coastal voice (e.g. summer marketing, late-season hikes).
+
+#### Accent overlay (added in latest revision)
+
+Stakeholder feedback: the original `#C8242C` vermillion read too aggressive — fine on small accent marks, too shouty when it carried a 58px full-width CTA. We kept vermillion in the codebase as one option, but the **default accent is now `Brick`**, with five other curated options exposed via the tweaks panel.
+
+The accent overlay **does not replace the palette** — it only overwrites the four `vermillion*` slots (`vermillion`, `vermillionInk`, `vermillionTint`, `vermillionEdge`) so every existing reference (CTAs, trail line, search rings, accent text, section numbers, range thumb, in-season month cells, etc.) recolors automatically. The map's topographic ink, the safety colors (`good`/`caution`/`danger`), and the paper/snow/ink ground are untouched.
+
+Defined in `Naertur.html` as `ACCENT_PRESETS`, applied via `applyAccent(palette, key, isDark)`:
+
+| Key          | Light `base` | Dark `base` | When to use                                                    |
+| ------------ | ------------ | ----------- | -------------------------------------------------------------- |
+| `brick`      | `#A04A3E`    | `#C56858`   | **Default.** Softer dusty red — keeps the Norwegian-flag warmth without the aggression. |
+| `terracotta` | `#B86A3D`    | `#D78A5C`   | Warm clay / orange-shifted — friendly, autumnal, earthy.       |
+| `moss`       | `#3F6B45`    | `#6FA37A`   | Outdoor green — most on-brand for hiking, calm and grounded.   |
+| `slate`      | `#344A5E`    | `#7B97AE`   | Quiet ink-blue — sophisticated, neutral, very Scandinavian-modern. |
+| `ink`        | `#141413`    | `#F2EFE7`   | Monochrome — no chromatic accent. Maximum editorial restraint. |
+| `vermillion` | `#C8242C`    | `#E0353D`   | Original. Keep as an opt-in for bold-mode marketing surfaces.  |
+
+For each preset, derive `ink` (text-on-accent, AA-contrast), `tint` (~8–12 % alpha for soft backgrounds), and `edge` (~20–28 % alpha for the Android CTA drop-shadow). Light/dark variants are pre-tuned so the dark mode hop matches the existing `Night Map` brightness shift.
+
+Implementation in the target stack should follow the same idea: store the accent as a single semantic token (`--accent`, `--on-accent`, `--accent-tint`, `--accent-edge`) and swap *only* those four values rather than forking the whole theme. Pick **one** default and ship the rest behind a feature flag if the team wants to A/B in production.
 
 ### 5.2 Typography
 

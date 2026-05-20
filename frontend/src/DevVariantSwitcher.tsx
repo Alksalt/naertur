@@ -45,7 +45,7 @@ export function DevVariantSwitcher({ current }: Props) {
         opacity: 0.92,
       }}
     >
-      <span style={{ color: '#E0353D' }}>●</span>
+      <span style={{ color: '#C56858' }}>●</span>
       <span style={{ textTransform: 'uppercase' }}>{current}</span>
       <span style={{ width: 1, height: 16, background: '#A39E91', opacity: 0.4 }} />
       <button onClick={() => switchTo('moss')} style={chipBtn(current === 'moss')}>
@@ -67,9 +67,9 @@ export function DevVariantSwitcher({ current }: Props) {
 
 function chipBtn(active: boolean): React.CSSProperties {
   return {
-    background: active ? '#E0353D' : 'transparent',
+    background: active ? '#C56858' : 'transparent',
     color: active ? '#0E0D0B' : '#F2EFE7',
-    border: `1px solid ${active ? '#E0353D' : '#A39E91'}`,
+    border: `1px solid ${active ? '#C56858' : '#A39E91'}`,
     borderRadius: 4,
     padding: '3px 7px',
     fontFamily: 'inherit',

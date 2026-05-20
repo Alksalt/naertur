@@ -2,6 +2,22 @@
 
 A reverse-chronological log of decisions, findings, and unresolved questions. Newest entry on top.
 
+## 2026-05-20 — Late night: Trail accent swap (Vermillion → Brick)
+
+Small colour-only refactor per `design_handoff_naertur_frontend 3/README.md` §5.1: stakeholder feedback flagged `#C8242C` vermillion as "fine on small accent marks, too shouty when it carried a 58px full-width CTA." Default accent softened to **Brick `#A04A3E`** (dark variant `#C56858`).
+
+Token name `vermillion` kept — only the four `vermillion*` slot *values* swapped, so every CTA, trail line, search ring, accent text, section number, range thumb, and in-season month cell recoloured automatically with no call-site edits.
+
+**Files:**
+- `frontend/src/variants/trail/theme.ts` — `trailhead`, `nightMap`, and `fjordTrail` palettes updated (base + tint @8–12% + edge @20–26%).
+- `frontend/src/DevVariantSwitcher.tsx` — hardcoded `#E0353D` chip → `#C56858`.
+
+**Untouched:** Moss variant (different design direction; handoff prescribes nothing for it), all topo/safety/paper tokens.
+
+**Verification:** `npm run lint` clean · `npm run build` 256.35 KiB / unchanged · `tests/welcome.trail.test.tsx` + `tests/place-picker.test.tsx` 9/9 pass. The two pre-existing `tests/api-client.test.ts` failures (undici can't parse relative `/api/...` in node when `VITE_API_BASE_URL=''`) are unrelated to colour — to be revisited separately.
+
+The other five accent presets from the handoff (`terracotta`, `moss`, `slate`, `ink`, `vermillion`) are not implemented as a runtime overlay — would require a separate `ACCENT_PRESETS` + `applyAccent` layer per the handoff. Logged as deferred since the user asked for a small refactor.
+
 ## 2026-05-20 — Night: place picker + 4 review-fix waves + Morotur email sent
 
 ### What shipped today (Waves 1–4)

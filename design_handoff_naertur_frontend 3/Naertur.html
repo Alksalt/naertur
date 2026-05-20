@@ -62,15 +62,66 @@ const { useState, useEffect } = React;
 const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "lang": "no",
   "theme": "trailhead",
+  "accent": "brick",
   "showAndroid": true,
   "showWeb": true
 }/*EDITMODE-END*/;
 
+// ── Accent presets ─────────────────────────────────────────────────────
+// Replaces the palette's vermillion-family slot. Each preset gives a base,
+// a contrasting ink for text-on-accent, a soft tint for backgrounds, and an
+// edge tone for shadows. Light + dark variants per preset.
+const ACCENT_PRESETS = {
+  vermillion: { // original — fiery red (kept for comparison)
+    name: 'Vermillion',
+    light: { base: '#C8242C', ink: '#FAF8F2', tint: 'rgba(200,36,44,0.08)',  edge: 'rgba(200,36,44,0.22)' },
+    dark:  { base: '#E0353D', ink: '#0E0D0B', tint: 'rgba(224,53,61,0.12)',  edge: 'rgba(224,53,61,0.28)' },
+  },
+  brick: { // softer, dustier red — still warm, far less shouty
+    name: 'Brick',
+    light: { base: '#A04A3E', ink: '#FAF8F2', tint: 'rgba(160,74,62,0.08)',  edge: 'rgba(160,74,62,0.20)' },
+    dark:  { base: '#C56858', ink: '#0E0D0B', tint: 'rgba(197,104,88,0.12)', edge: 'rgba(197,104,88,0.26)' },
+  },
+  terracotta: { // warm clay / orange-shifted red — friendly, earthy
+    name: 'Terracotta',
+    light: { base: '#B86A3D', ink: '#FAF8F2', tint: 'rgba(184,106,61,0.08)', edge: 'rgba(184,106,61,0.20)' },
+    dark:  { base: '#D78A5C', ink: '#0E0D0B', tint: 'rgba(215,138,92,0.12)', edge: 'rgba(215,138,92,0.26)' },
+  },
+  moss: { // deep moss-green — outdoor, calm, very on-brand for hiking
+    name: 'Moss',
+    light: { base: '#3F6B45', ink: '#F2EFE7', tint: 'rgba(63,107,69,0.08)',  edge: 'rgba(63,107,69,0.20)' },
+    dark:  { base: '#6FA37A', ink: '#0E0D0B', tint: 'rgba(111,163,122,0.12)',edge: 'rgba(111,163,122,0.26)' },
+  },
+  slate: { // quiet ink-blue — sophisticated, neutral
+    name: 'Slate',
+    light: { base: '#344A5E', ink: '#F2EFE7', tint: 'rgba(52,74,94,0.08)',   edge: 'rgba(52,74,94,0.20)' },
+    dark:  { base: '#7B97AE', ink: '#0E0D0B', tint: 'rgba(123,151,174,0.12)',edge: 'rgba(123,151,174,0.26)' },
+  },
+  ink: { // monochrome — no chromatic accent, ultimate restraint
+    name: 'Ink',
+    light: { base: '#141413', ink: '#F2EFE7', tint: 'rgba(20,20,19,0.06)',   edge: 'rgba(20,20,19,0.18)' },
+    dark:  { base: '#F2EFE7', ink: '#0E0D0B', tint: 'rgba(242,239,231,0.10)',edge: 'rgba(242,239,231,0.22)' },
+  },
+};
+
+function applyAccent(palette, accentKey, isDark) {
+  const preset = ACCENT_PRESETS[accentKey] || ACCENT_PRESETS.brick;
+  const a = isDark ? preset.dark : preset.light;
+  return {
+    ...palette,
+    vermillion: a.base,
+    vermillionInk: a.ink,
+    vermillionTint: a.tint,
+    vermillionEdge: a.edge,
+  };
+}
+
 function Root() {
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const lang = t.lang;
-  const palette = window.TRAIL_PALETTES[t.theme] || window.TRAIL_PALETTES.trailhead;
+  const basePalette = window.TRAIL_PALETTES[t.theme] || window.TRAIL_PALETTES.trailhead;
   const isDark = t.theme === 'nightMap';
+  const palette = applyAccent(basePalette, t.accent, isDark);
   const L = window.I18N[lang];
 
   const iOSw = 402, iOSh = 874;
@@ -158,6 +209,17 @@ function Root() {
             { value: 'fjordTrail', label: 'Fjord' },
           ]}
           onChange={(v) => setTweak('theme', v)} />
+        <TweakSelect label={lang === 'no' ? 'Aksentfarge' : 'Accent'}
+          value={t.accent}
+          options={[
+            { value: 'brick',      label: 'Brick — softer red' },
+            { value: 'terracotta', label: 'Terracotta — warm clay' },
+            { value: 'moss',       label: 'Moss — outdoor green' },
+            { value: 'slate',      label: 'Slate — quiet blue' },
+            { value: 'ink',        label: 'Ink — monochrome' },
+            { value: 'vermillion', label: 'Vermillion (original)' },
+          ]}
+          onChange={(v) => setTweak('accent', v)} />
         <TweakSection label={lang === 'no' ? 'Visning' : 'Display'} />
         <TweakToggle label={lang === 'no' ? 'Vis Android' : 'Show Android'}
           value={t.showAndroid} onChange={(v) => setTweak('showAndroid', v)} />
