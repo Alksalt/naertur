@@ -5,6 +5,26 @@ import uuid
 import pytest
 
 from app.db.models import Hike, HikeGeometry
+from tests.db import TEST_DATABASE_URL, ensure_test_database
+
+
+@pytest.fixture(scope="session")
+def bootstrap_test_database() -> str:
+    """Create ``naertur_test`` if missing and run Alembic migrations on it.
+
+    Session-scoped so the bootstrap runs once per pytest invocation. Any DB
+    test that needs the schema in place should depend on this fixture.
+    Returns the test database URL so callers don't have to import it
+    separately. If Postgres is unreachable, skips the dependent test rather
+    than failing the whole session — laptops without Docker still pass
+    unit-only runs.
+    """
+
+    try:
+        ensure_test_database()
+    except RuntimeError as exc:
+        pytest.skip(f"Test database unavailable: {exc}")
+    return TEST_DATABASE_URL
 
 
 @pytest.fixture
@@ -69,4 +89,3 @@ def sample_hike(sample_geojson: dict) -> Hike:
         trailhead=None,
     )
     return hike
-

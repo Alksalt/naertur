@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
-import { randomHike, StaleSearchError, sanitizeRejected } from '../src/api/client';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import type {
+  randomHike as RandomHikeFn,
+  sanitizeRejected as SanitizeRejectedFn,
+  StaleSearchError as StaleSearchErrorClass,
+} from '../src/api/client';
 import type { SearchRequest } from '../src/types';
 
 const baseReq: SearchRequest = {
@@ -11,6 +15,29 @@ const baseReq: SearchRequest = {
   avoid: [],
   rejectedHikeIds: [],
 };
+
+// `frontend/src/api/client.ts` keeps a module-level `generation` counter
+// that is incremented by every randomHike call across the suite. When
+// welcome.moss.test.tsx and welcome.trail.test.tsx happen to mount <App />
+// in the same Vitest worker (and a future change wires randomHike into
+// App's mount path), generation can be non-zero by the time these tests
+// run — which makes the burst-race assertions flaky.
+//
+// `vi.resetModules()` plus a dynamic re-import gives each test a brand-new
+// module instance, resetting generation to 0. We rebind the locals via
+// dynamic import inside beforeEach so the tests below always see fresh
+// exports.
+let randomHike: typeof RandomHikeFn;
+let sanitizeRejected: typeof SanitizeRejectedFn;
+let StaleSearchError: typeof StaleSearchErrorClass;
+
+beforeEach(async () => {
+  vi.resetModules();
+  const fresh = await import('../src/api/client');
+  randomHike = fresh.randomHike;
+  sanitizeRejected = fresh.sanitizeRejected;
+  StaleSearchError = fresh.StaleSearchError;
+});
 
 describe('sanitizeRejected', () => {
   it('keeps valid UUIDs (case-insensitive)', () => {

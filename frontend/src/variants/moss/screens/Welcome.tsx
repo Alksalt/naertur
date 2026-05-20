@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTheme } from '../theme';
-import { useI18n, TOWNS_MR } from '../../../i18n';
+import { useI18n } from '../../../i18n';
 import { Icon } from '../components/Icon';
 import { NaerturMark } from '../components/NaerturMark';
 import { HikeScene } from '../components/scenes/HikeScene';
 import { Badge } from '../primitives';
 import { primaryBtn, secondaryBtn, iconBtn } from '../styles';
 import { hexA } from '../../../format';
-import type { Lang, Location, ThemeName } from '../../../types';
+import { PlacePicker, type PlacePickerSlots } from '../../../components/PlacePicker';
+import { nearestPlace } from '../../../api/places';
+import type { Lang, ThemeName } from '../../../types';
 
 interface Props {
   statusH: number;
@@ -16,7 +18,7 @@ interface Props {
   setLang: (l: Lang) => void;
   themeName: ThemeName;
   setThemeName: (t: ThemeName) => void;
-  onLocationGranted: (label: string, sub?: string, coords?: Location) => void;
+  onLocationGranted: (label: string, sub?: string, coords?: { lat: number; lon: number }) => void;
 }
 
 export function Welcome({
@@ -32,6 +34,11 @@ export function Welcome({
   const { L } = useI18n();
   const [picker, setPicker] = useState(false);
   const [locating, setLocating] = useState(false);
+  // Memoise the picker slots so PlacePicker only sees a new object identity
+  // when the palette changes — not on every Welcome re-render (e.g. locating
+  // state flips). Without this, slots is freshly allocated each render and
+  // would defeat any future memoisation inside PlacePicker.
+  const pickerSlots = useMemo(() => mossPlacePickerSlots(C), [C]);
 
   // Prevent setState-after-unmount when navigator.geolocation resolves after
   // the user has already moved on (e.g., tapped "Velg sted" mid-permission).
@@ -43,20 +50,26 @@ export function Welcome({
     };
   }, []);
 
-  function handleUseLocation() {
+  async function handleUseLocation() {
     if (!navigator.geolocation) {
       setPicker(true);
       return;
     }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
+        if (!mountedRef.current) return;
+        const coords = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+        let label = L.locOk;
+        try {
+          const place = await nearestPlace(coords.lat, coords.lon);
+          if (place) label = place.name;
+        } catch {
+          // offline / 5xx — keep the generic locOk label; coords still flow.
+        }
         if (!mountedRef.current) return;
         setLocating(false);
-        onLocationGranted(L.locOk, undefined, {
-          lat: pos.coords.latitude,
-          lon: pos.coords.longitude,
-        });
+        onLocationGranted(label, undefined, coords);
       },
       () => {
         if (!mountedRef.current) return;
@@ -182,7 +195,7 @@ export function Welcome({
             {locating ? L.locating : L.useLocation}
           </button>
           <button onClick={() => setPicker(true)} style={secondaryBtn(C)}>
-            {L.chooseTown}
+            {L.choosePlace}
           </button>
 
           <div
@@ -232,134 +245,75 @@ export function Welcome({
       </div>
 
       {picker && (
-        <TownPicker
-          C={C}
+        <PlacePicker
+          open
           onClose={() => setPicker(false)}
-          onPick={(label) => {
+          onPick={({ label, location }) => {
             setPicker(false);
-            onLocationGranted(label, 'valgt');
+            onLocationGranted(label, undefined, location);
           }}
+          slots={pickerSlots}
+          L={L}
+          closeIcon={<Icon name="close" size={18} color={C.ink} />}
         />
       )}
     </div>
   );
 }
 
-function TownPicker({
-  C,
-  onClose,
-  onPick,
-}: {
-  C: ReturnType<typeof useTheme>;
-  onClose: () => void;
-  onPick: (label: string) => void;
-}) {
-  const { L } = useI18n();
-  const closeRef = useRef<HTMLButtonElement | null>(null);
-  const firstItemRef = useRef<HTMLButtonElement | null>(null);
-
-  // Focus management — initial focus on close button + ESC to dismiss + restore.
-  useEffect(() => {
-    const previousActive = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      previousActive?.focus?.();
-    };
-  }, [onClose]);
-
-  // Tab trap — keep focus inside the picker.
-  const handleTab = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
-      const focusable = e.currentTarget.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
+// Replicates the visuals of the previous inline TownPicker — kept as a factory
+// so each invocation gets a fresh slots object (theme palettes can flip live
+// when the user toggles light/dark/fjord).
+function mossPlacePickerSlots(C: ReturnType<typeof useTheme>): PlacePickerSlots {
+  return {
+    modalChrome: {
+      position: 'absolute',
+      inset: 0,
+      background: hexA(C.ink, 0.4),
+      display: 'flex',
+      alignItems: 'flex-end',
+      zIndex: 10,
     },
-    [],
-  );
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={L.chooseTown}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: hexA(C.ink, 0.4),
-        display: 'flex',
-        alignItems: 'flex-end',
-        zIndex: 10,
-      }}
-      onClick={onClose}
-      onKeyDown={handleTab}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          background: C.bg,
-          borderTopLeftRadius: 18,
-          borderTopRightRadius: 18,
-          padding: '20px 18px 28px',
-          maxHeight: '70%',
-          overflowY: 'auto',
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 14,
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>{L.chooseTown}</h2>
-          <button ref={closeRef} onClick={onClose} aria-label={L.closeLabel} style={iconBtn(C)}>
-            <Icon name="close" size={18} color={C.ink} />
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {TOWNS_MR.map((t, i) => (
-            <button
-              key={t.id}
-              ref={i === 0 ? firstItemRef : undefined}
-              onClick={() => onPick(t.label)}
-              style={{
-                background: C.card,
-                border: `1px solid ${C.border}`,
-                borderRadius: 12,
-                padding: '14px 16px',
-                fontFamily: 'inherit',
-                fontSize: 15,
-                color: C.ink,
-                textAlign: 'left',
-                cursor: 'pointer',
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+    modalSurface: {
+      width: '100%',
+      background: C.bg,
+      borderTopLeftRadius: 18,
+      borderTopRightRadius: 18,
+      padding: '20px 18px 28px',
+      maxHeight: '70%',
+      overflowY: 'auto',
+    },
+    searchInput: {
+      width: '100%',
+      padding: '12px 14px',
+      background: C.card,
+      border: '1px solid ' + C.border,
+      borderRadius: 12,
+      fontSize: 15,
+      color: C.ink,
+      fontFamily: 'inherit',
+      marginBottom: 10,
+      outline: 'none',
+    },
+    resultRow: (active: boolean) => ({
+      background: active ? C.card : 'transparent',
+      border: '1px solid ' + (active ? C.primary : C.border),
+      borderRadius: 12,
+      padding: '14px 16px',
+      fontFamily: 'inherit',
+      fontSize: 15,
+      color: C.ink,
+      textAlign: 'left',
+      cursor: 'pointer',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 2,
+      width: '100%',
+    }),
+    resultName: { fontWeight: 500 },
+    resultMeta: { fontSize: 12, color: C.muted },
+    emptyState: { fontSize: 13, color: C.muted, padding: '10px 4px' },
+    closeBtn: iconBtn(C),
+    status: { fontSize: 13, color: C.muted, padding: '8px 4px' },
+  };
 }

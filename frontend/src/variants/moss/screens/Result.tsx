@@ -6,6 +6,7 @@ import { Stat, SafetyPill } from '../primitives';
 import { glassBtn, glassPill, primaryBtn, secondaryBtn } from '../styles';
 import { fmtDistanceKm, fmtDur, hexA } from '../../../format';
 import { reasonIcon, reasonLabel } from '../../../reasons';
+import { openInMaps } from '../../../maps';
 import type { UiSearchResponse } from '../../../types';
 import type { SceneKey } from '../components/scenes/HikeScene';
 
@@ -70,12 +71,20 @@ export function Result({
           <button onClick={onBack} aria-label={L.backLabel} style={glassBtn(C)}>
             <Icon name="arrowL" size={18} color={C.ink} />
           </button>
-          <div style={{ ...glassPill(C), fontSize: 12.5, padding: '6px 12px', fontWeight: 500 }}>
-            <Icon name="location" size={13} color={C.ink} />
-            {locationLabel ?? 'Ålesund'}
-            {hike.travelMinutes !== undefined && ` · ${hike.travelMinutes} ${L.minutes}`}
-          </div>
-          <button aria-label={L.openInMaps} style={glassBtn(C)}>
+          {(locationLabel || hike.travelMinutes !== undefined) && (
+            <div style={{ ...glassPill(C), fontSize: 12.5, padding: '6px 12px', fontWeight: 500 }}>
+              <Icon name="location" size={13} color={C.ink} />
+              {locationLabel}
+              {locationLabel && hike.travelMinutes !== undefined && ' · '}
+              {hike.travelMinutes !== undefined && `${hike.travelMinutes} ${L.minutes}`}
+            </div>
+          )}
+          <button
+            aria-label={L.openInMaps}
+            onClick={() => openInMaps(hike)}
+            disabled={!hike.trailhead}
+            style={{ ...glassBtn(C), opacity: hike.trailhead ? 1 : 0.4 }}
+          >
             <Icon name="map" size={18} color={C.ink} />
           </button>
         </div>
@@ -143,6 +152,32 @@ export function Result({
           <SafetyPill status={safetyStatus} label={safetyLabel} C={C} />
           <span style={{ fontSize: 12.5, color: C.mutedSoft }}>{L.advisoryShort}</span>
         </div>
+        <div
+          style={{
+            marginTop: 6,
+            fontSize: 12,
+            color: C.muted,
+            lineHeight: 1.4,
+          }}
+        >
+          {L.attributionMorotur.split('morotur.no').map((part, i, arr) =>
+            i < arr.length - 1 ? (
+              <span key={i}>
+                {part}
+                <a
+                  href="https://morotur.no"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: C.muted, textDecoration: 'underline' }}
+                >
+                  morotur.no
+                </a>
+              </span>
+            ) : (
+              <span key={i}>{part}</span>
+            ),
+          )}
+        </div>
 
         <div
           style={{
@@ -166,7 +201,7 @@ export function Result({
             )}
           </Stat>
           <Stat C={C} label={L.ascent}>
-            {hike.ascentMeters !== undefined ? (
+            {hike.ascentMeters ? (
               <>
                 {hike.ascentMeters}
                 <small> m</small>
@@ -189,6 +224,20 @@ export function Result({
             )}
           </Stat>
         </div>
+
+        {result.transport?.status === 'unverified_until_entur' && (
+          <div
+            role="note"
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              color: C.muted,
+              lineHeight: 1.4,
+            }}
+          >
+            {L.transportUnverified}
+          </div>
+        )}
 
         {result.matchReasons.length > 0 && (
           <div

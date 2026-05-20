@@ -53,6 +53,21 @@ def test_region_lookup_outside_returns_none() -> None:
     assert region_id_for_trailhead(59.91, 10.75) is None
 
 
+def test_region_lookup_former_overlap_resolves_to_sunnmore() -> None:
+    # Prior to 2026-05-20 the Sunnmøre (lat 62.00–62.55, lon 5.40–7.40) and
+    # Romsdal (lat 62.30–63.10, lon 6.80–8.90) bboxes overlapped in lat
+    # 62.30–62.55, lon 6.80–7.40 — declaration order silently handed those
+    # trailheads to Sunnmøre, but that was a coincidence, not a decision.
+    # Romsdal's lat_min was raised to 62.55 (south of its southernmost
+    # settled trailheads at Åndalsnes / Eresfjord) so the formerly-overlap
+    # zone unambiguously belongs to Sunnmøre — which is the geographically
+    # correct region for inner Storfjorden / Stranda municipality.
+    assert region_id_for_trailhead(62.45, 7.0) == SUNNMORE_REGION_ID
+    # And a clearly-Romsdal coordinate north of the new boundary still
+    # resolves to Romsdal.
+    assert region_id_for_trailhead(62.60, 7.0) == ROMSDAL_REGION_ID
+
+
 def test_slim_nve_payload_strips_extra_fields() -> None:
     record = {
         "RegId": 464618,

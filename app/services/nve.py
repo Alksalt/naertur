@@ -42,14 +42,32 @@ INDRE_FJORDANE_REGION_ID = 3027
 # Approximate bounding boxes (lat_min, lat_max, lon_min, lon_max). These are
 # coarse for v1 — they cover the trailhead point, not the avalanche terrain
 # itself. Refine with real polygons in a later wave.
+#
+# Boundary policy: ranges are inclusive on both ends and the first matching
+# region in declaration order wins. This means edges shared between adjacent
+# regions are deterministically resolved by ordering rather than overlap.
+#
+# Fixed 2026-05-20: Romsdal previously started at lat_min=62.30, which created
+# a real (non-edge) overlap with Sunnmøre (lat 62.30–62.55, lon 6.80–7.40)
+# around inner Storfjorden / Stranda municipality. Those municipalities are
+# geographically part of Sunnmøre, so Romsdal's lat_min was raised to 62.55
+# (south of Åndalsnes/Eresfjord, which are Romsdal's southernmost settled
+# trailheads). This eliminates the overlap; trailheads in the former overlap
+# zone now resolve to Sunnmøre, which is the geographically correct region.
+#
+# Indre Fjordane lat_max=62.00 and Sunnmøre lat_min=62.00 touch on a single
+# latitude line (zero-area edge case). Indre Fjordane is listed first so a
+# trailhead at exactly lat=62.00 resolves to Indre Fjordane — acceptable for
+# the v1 coarse boxes since no surveyed trailhead in MoR sits on that line.
 _REGION_BBOXES: list[tuple[int, float, float, float, float]] = [
     # Indre Fjordane — Stryn / Loen / Olden, south of Sunnmøre. Checked first
     # because it is the southernmost A-region in our area.
     (INDRE_FJORDANE_REGION_ID, 61.30, 62.00, 5.90, 7.80),
     # Sunnmøre — Ålesund / Ørsta / Stranda / Geiranger, southern Møre og Romsdal.
     (SUNNMORE_REGION_ID, 62.00, 62.55, 5.40, 7.40),
-    # Romsdal — Molde / Åndalsnes / Romsdalsfjorden.
-    (ROMSDAL_REGION_ID, 62.30, 63.10, 6.80, 8.90),
+    # Romsdal — Molde / Åndalsnes / Romsdalsfjorden. lat_min raised from
+    # 62.30 to 62.55 to remove the overlap with Sunnmøre (see above).
+    (ROMSDAL_REGION_ID, 62.55, 63.10, 6.80, 8.90),
     # Trollheimen — north-eastern Møre og Romsdal into Trøndelag.
     (TROLLHEIMEN_REGION_ID, 62.55, 63.30, 8.40, 10.00),
 ]
@@ -111,12 +129,22 @@ class NveClient:
             if response.status_code >= 500:
                 raise NveUnavailable(f"NVE returned {response.status_code}")
             response.raise_for_status()
+            # ``response.json()`` lives inside the try/except so a 200 with
+            # an HTML interstitial (WAF page, mojibake body, occasional NVE
+            # CDN cache filler) does not bubble out as ``ValueError`` /
+            # ``json.JSONDecodeError`` and crash the safety evaluator. The
+            # caller in SafetyService._avalanche_from_outcome already
+            # catches NveUnavailable; the symmetry just means a non-JSON
+            # 200 is treated like any other upstream degradation.
+            payload = response.json()
         except httpx.HTTPStatusError as exc:
             raise NveUnavailable(f"NVE HTTP error: {exc}") from exc
         except httpx.RequestError as exc:
             raise NveUnavailable(f"NVE request error: {exc}") from exc
+        except ValueError as exc:
+            # json.JSONDecodeError is a ValueError subclass.
+            raise NveUnavailable("NVE returned non-JSON body") from exc
 
-        payload = response.json()
         if isinstance(payload, list):
             return payload[0] if payload else None
         if isinstance(payload, dict):

@@ -5,9 +5,10 @@ import { hexA } from '../../../format';
 
 interface Props {
   phase: number; // 0..2
+  onCancel?: () => void;
 }
 
-export function Finding({ phase }: Props) {
+export function Finding({ phase, onCancel }: Props) {
   const C = useTheme();
   const { L } = useI18n();
 
@@ -19,7 +20,10 @@ export function Finding({ phase }: Props) {
 
   return (
     <div
+      role="status"
+      aria-live="polite"
       style={{
+        position: 'relative',
         width: '100%',
         height: '100%',
         background: C.primary,
@@ -30,6 +34,31 @@ export function Finding({ phase }: Props) {
         flexDirection: 'column',
       }}
     >
+      {onCancel && (
+        <button
+          autoFocus
+          onClick={onCancel}
+          aria-label={L.backLabel}
+          style={{
+            position: 'absolute',
+            top: 22,
+            left: 18,
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            border: `1px solid ${hexA(C.primaryInk, 0.25)}`,
+            background: hexA(C.primaryInk, 0.08),
+            color: C.primaryInk,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+        >
+          <Icon name="arrowL" size={18} color={C.primaryInk} />
+        </button>
+      )}
       <div style={{ position: 'relative', width: 180, height: 180 }}>
         <div
           style={{

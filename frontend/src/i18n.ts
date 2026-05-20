@@ -7,14 +7,10 @@ import { createContext, useContext } from 'react';
 import type { Lang } from './types';
 
 export interface Strings {
-  appName: string;
   tagline: string;
   welcomeSub: string;
   useLocation: string;
   chooseTown: string;
-  locationAround: string;
-  near: string;
-  edit: string;
   filters: string;
   difficulty: string;
   easy: string;
@@ -30,7 +26,6 @@ export interface Strings {
   walk: string;
   maxTravel: string;
   minutes: string;
-  preferences: string;
   avoid: string;
   findHike: string;
   finding: string;
@@ -47,21 +42,17 @@ export interface Strings {
   anotherOne: string;
   notMine: string;
   safetyNote: string;
+  attributionMorotur: string;
   source: string;
   openInMaps: string;
   description: string;
   trailhead: string;
   parking: string;
   season: string;
-  monthsOpen: string;
-  backToResult: string;
-  rejectedTitle: string;
-  rejectedSub: string;
   locating: string;
   locOk: string;
   weatherOk: string;
   seasonOk: string;
-  noWarnings: string;
   matchEasy: string;
   matchLoop: string;
   matchView: string;
@@ -71,10 +62,6 @@ export interface Strings {
   matchWater: string;
   matchChild: string;
   advisoryShort: string;
-  locDenied: string;
-  or: string;
-  skipLocation: string;
-  settings: string;
   privacy: string;
   aboutLine1: string;
   aboutLine2: string;
@@ -82,14 +69,21 @@ export interface Strings {
   backLabel: string;
   closeLabel: string;
   avoidSteep: string;
-  seasonOpen: string;
-  seasonClosed: string;
   moreInfo: string;
   elevProfile: string;
   safety: string;
   safetyDetails: Record<string, string>;
   counties: Record<string, string>;
   hikesUnit: string;
+  // ErrorBanner copy (shared between moss + trail variants).
+  noCandidatesTitle: string;
+  noCandidatesBody: string;
+  genericErrorTitle: string;
+  // Wave 4 / Stream I — Result screen surfaces an Entur-stub warning when
+  // backend returns transport.status === 'unverified_until_entur'.
+  transportUnverified: string;
+  // Mock-mode user-visible badge (frontend/src/components/MockBadge.tsx).
+  mockBadge: string;
   // v2-only strings (Trail Map variant uses these; moss variant doesn't reference them).
   taglineLead: string;
   taglineItalic: string;
@@ -106,23 +100,31 @@ export interface Strings {
   compassDirs: [string, string, string, string];
   langSwitchLabel: string;
   themeSwitchLabel: string;
+  // Filters screen.
+  filtersNoMatch: string;
+  resetFilters: string;
+  clearRejected: (count: number) => string;
+  // Place picker (Welcome screen "Velg sted" replacement).
+  choosePlace: string;
+  placePickerHint: string;
+  placePickerSearching: string;
+  placePickerEmpty: string;
+  placePickerError: string;
+  placePickerOffline: string;
+  placeTypeLabels: Record<string, string>;
 }
 
 export const I18N: Record<Lang, Strings> = {
   no: {
-    appName: 'NærTur',
     tagline: 'Én tapp. Få en nær tur som passer i dag.',
     welcomeSub:
       'Vi finner én tur for deg — basert på vær, sesong og hva du har lyst på i dag.',
     useLocation: 'Bruk min posisjon',
     chooseTown: 'Velg sted',
-    locationAround: 'Søker rundt',
-    near: 'nær',
-    edit: 'Endre',
     filters: 'Filtre',
     difficulty: 'Vanskelighet',
     easy: 'Enkel',
-    medium: 'Medium',
+    medium: 'Middels',
     hard: 'Krevende',
     length: 'Lengde',
     under5: 'Under 5 km',
@@ -134,7 +136,6 @@ export const I18N: Record<Lang, Strings> = {
     walk: 'Til fots',
     maxTravel: 'Maks reisetid',
     minutes: 'min',
-    preferences: 'Tema',
     avoid: 'Unngå',
     findHike: 'Finn tur',
     finding: 'Finner din tur',
@@ -151,22 +152,18 @@ export const I18N: Record<Lang, Strings> = {
     anotherOne: 'Velg en annen',
     notMine: 'Ikke min tur',
     safetyNote:
-      'Anbefalt basert på tilgjengelige data. Sjekk alltid lokale forhold.',
+      'Anbefalingen er basert på tilgjengelige data. Sjekk alltid yr.no for vær og varsom.no for skred før du går.',
+    attributionMorotur: 'Tur-data fra morotur.no — Møre og Romsdal fylkeskommune',
     source: 'Kilde',
     openInMaps: 'Åpne i kart',
     description: 'Om turen',
     trailhead: 'Startpunkt',
     parking: 'Parkering',
     season: 'Sesong',
-    monthsOpen: 'Sesong',
-    backToResult: 'Tilbake',
-    rejectedTitle: 'Forsto. Finner noe annet.',
-    rejectedSub: 'Vi prøver en ny tur basert på det du har sagt nei til.',
     locating: 'Finner posisjon',
     locOk: 'Posisjon funnet',
     weatherOk: 'God værmelding',
     seasonOk: 'Innenfor sesong',
-    noWarnings: 'Ingen aktive farevarsler',
     matchEasy: 'Lett nok',
     matchLoop: 'Rundtur som du ønsket',
     matchView: 'Utsikt på toppen',
@@ -176,19 +173,13 @@ export const I18N: Record<Lang, Strings> = {
     matchWater: 'Ved vann',
     matchChild: 'Barnevennlig',
     advisoryShort: 'Innenfor sesong · Ingen farevarsler',
-    locDenied: 'Ingen posisjon',
-    or: 'eller',
-    skipLocation: 'Hopp over',
-    settings: 'Innstillinger',
-    privacy: 'Vi lagrer ingenting om deg.',
+    privacy: 'Filtre og avviste turer lagres lokalt på telefonen. Ingenting sendes til oss.',
     aboutLine1: 'Gratis. Ingen konto.',
     aboutLine2: 'Lokal-først.',
     tagsLabel: 'Hva slags tur',
     backLabel: 'Tilbake',
     closeLabel: 'Lukk',
     avoidSteep: 'Ikke bratt',
-    seasonOpen: 'Åpen nå',
-    seasonClosed: 'Utenfor sesong',
     moreInfo: 'Mer info',
     elevProfile: 'Høydeprofil',
     safety: 'Sikkerhet',
@@ -201,6 +192,11 @@ export const I18N: Record<Lang, Strings> = {
     },
     counties: { 'Møre og Romsdal': 'Møre og Romsdal' },
     hikesUnit: 'turer',
+    noCandidatesTitle: 'Fant ingen turer som passer.',
+    noCandidatesBody: 'Prøv færre filtre, åpne for mer vanskelighet, eller lengre reisetid.',
+    genericErrorTitle: 'Noe gikk galt. Prøv igjen.',
+    transportUnverified: 'Reisetid er anslått. Vi har ikke koblet til Entur ennå.',
+    mockBadge: 'PRØVEDATA · 5 turer',
     taglineLead: 'Én tapp.\nÉn tur. ',
     taglineItalic: 'I dag.',
     factStripHikes: 'TURER',
@@ -216,17 +212,35 @@ export const I18N: Record<Lang, Strings> = {
     compassDirs: ['N', 'Ø', 'S', 'V'],
     langSwitchLabel: 'Switch to English',
     themeSwitchLabel: 'Bytt tema',
+    filtersNoMatch: 'Ingen turer passet — løs opp filtrene eller tøm avviste turer.',
+    resetFilters: 'Tilbakestill filtre',
+    clearRejected: (n: number) => `Tøm avviste turer (${n})`,
+    choosePlace: 'Velg sted',
+    placePickerHint: 'Skriv inn et stedsnavn',
+    placePickerSearching: 'Søker...',
+    placePickerEmpty: 'Ingen treff. Prøv et annet navn.',
+    placePickerError: 'Søk feilet. Prøv igjen.',
+    placePickerOffline: 'Du er offline. Bruk GPS eller koble til internett.',
+    // Keys match the exact `place_type` values stored in `places.place_type`
+    // (Kartverket-derived, PascalCase, sometimes with parenthetical suffix).
+    // Source of truth: `SELECT DISTINCT place_type FROM places`. PlacePicker
+    // renders `p.placeType` raw if the key is missing (defensive fallback).
+    placeTypeLabels: {
+      Tettsted: 'Tettsted',
+      By: 'By',
+      'Bygdelag (bygd)': 'Bygd',
+      Grend: 'Grend',
+      Gard: 'Gård',
+      Boligfelt: 'Boligfelt',
+      Tettbebyggelse: 'Tett bebyggelse',
+    },
   },
   en: {
-    appName: 'NærTur',
     tagline: 'One tap. A nearby hike that fits today.',
     welcomeSub:
       'We pick one hike for you — based on weather, season and what you feel like today.',
     useLocation: 'Use my location',
     chooseTown: 'Choose a place',
-    locationAround: 'Searching around',
-    near: 'near',
-    edit: 'Edit',
     filters: 'Filters',
     difficulty: 'Difficulty',
     easy: 'Easy',
@@ -242,7 +256,6 @@ export const I18N: Record<Lang, Strings> = {
     walk: 'On foot',
     maxTravel: 'Max travel',
     minutes: 'min',
-    preferences: 'Theme',
     avoid: 'Avoid',
     findHike: 'Find hike',
     finding: 'Finding your hike',
@@ -259,44 +272,34 @@ export const I18N: Record<Lang, Strings> = {
     anotherOne: 'Pick another',
     notMine: 'Not my hike',
     safetyNote:
-      'Recommended based on available data. Always check local conditions.',
+      'Recommendation based on available data. Always check yr.no for weather and varsom.no for avalanche warnings before you go.',
+    attributionMorotur: 'Hike data from morotur.no — Møre og Romsdal County',
     source: 'Source',
     openInMaps: 'Open in maps',
     description: 'About the hike',
     trailhead: 'Trailhead',
     parking: 'Parking',
     season: 'Season',
-    monthsOpen: 'In season',
-    backToResult: 'Back',
-    rejectedTitle: 'Got it. Finding another.',
-    rejectedSub: 'Trying a new hike based on what you said no to.',
     locating: 'Getting location',
     locOk: 'Location found',
     weatherOk: 'Good forecast',
     seasonOk: 'In season',
-    noWarnings: 'No active warnings',
     matchEasy: 'Easy enough',
     matchLoop: 'Loop trail, as asked',
     matchView: 'View at the top',
     matchTravel: 'within travel time',
-    matchTransport: 'Reachable by bus',
+    matchTransport: 'Reachable by public transport',
     matchForest: 'Forest walk',
     matchWater: 'By water',
     matchChild: 'Child-friendly',
     advisoryShort: 'In season · No active warnings',
-    locDenied: 'No location',
-    or: 'or',
-    skipLocation: 'Skip',
-    settings: 'Settings',
-    privacy: 'We store nothing about you.',
+    privacy: 'Filters and rejected hikes are stored locally on your phone. Nothing is sent to us.',
     aboutLine1: 'Free. No account.',
     aboutLine2: 'Local-first.',
     tagsLabel: 'What kind of hike',
     backLabel: 'Back',
     closeLabel: 'Close',
     avoidSteep: 'Avoid steep',
-    seasonOpen: 'Open now',
-    seasonClosed: 'Out of season',
     moreInfo: 'More info',
     elevProfile: 'Elevation',
     safety: 'Safety',
@@ -309,6 +312,11 @@ export const I18N: Record<Lang, Strings> = {
     },
     counties: { 'Møre og Romsdal': 'Møre og Romsdal' },
     hikesUnit: 'hikes',
+    noCandidatesTitle: 'No hikes match your filters.',
+    noCandidatesBody: 'Try fewer filters, open up difficulty, or a longer travel time.',
+    genericErrorTitle: 'Something went wrong. Try again.',
+    transportUnverified: 'Travel time is estimated. Entur is not connected yet.',
+    mockBadge: 'DEMO DATA · 5 hikes',
     taglineLead: 'One tap.\nOne hike. ',
     taglineItalic: 'Today.',
     factStripHikes: 'HIKES',
@@ -324,6 +332,25 @@ export const I18N: Record<Lang, Strings> = {
     compassDirs: ['N', 'E', 'S', 'W'],
     langSwitchLabel: 'Bytt til norsk',
     themeSwitchLabel: 'Switch theme',
+    filtersNoMatch: 'No hikes match — loosen filters or clear rejected hikes.',
+    resetFilters: 'Reset filters',
+    clearRejected: (n: number) => `Clear rejected (${n})`,
+    choosePlace: 'Choose a place',
+    placePickerHint: 'Type a place name',
+    placePickerSearching: 'Searching...',
+    placePickerEmpty: 'No matches. Try a different name.',
+    placePickerError: 'Search failed. Try again.',
+    placePickerOffline: "You're offline. Use GPS or reconnect to search places.",
+    // See NO comment above — keys match DB place_type exactly.
+    placeTypeLabels: {
+      Tettsted: 'Urban area',
+      By: 'Town',
+      'Bygdelag (bygd)': 'Village',
+      Grend: 'Hamlet',
+      Gard: 'Farm',
+      Boligfelt: 'Housing area',
+      Tettbebyggelse: 'Built-up area',
+    },
   },
 };
 
@@ -338,26 +365,11 @@ export const TAGS: TagDef[] = [
   { id: 'viewpoint', no: 'Utsikt', en: 'Viewpoint', icon: 'view' },
   { id: 'forest', no: 'Skog', en: 'Forest', icon: 'tree' },
   { id: 'mountain', no: 'Fjell', en: 'Mountain', icon: 'peak' },
-  { id: 'water', no: 'Vann', en: 'Lake', icon: 'water' },
+  { id: 'water', no: 'Vann', en: 'Water', icon: 'water' },
   { id: 'waterfall', no: 'Foss', en: 'Waterfall', icon: 'falls' },
   { id: 'loop', no: 'Rundtur', en: 'Loop', icon: 'loop' },
   { id: 'child', no: 'Barnevennlig', en: 'Kid-friendly', icon: 'kid' },
-  { id: 'dog', no: 'Hund ok', en: 'Dog ok', icon: 'dog' },
-];
-
-// Hardcoded list per the handoff's open question #14.1 — small picker list
-// for the Welcome screen "Velg sted" fallback when geolocation is denied.
-export const TOWNS_MR: { id: string; label: string }[] = [
-  { id: 'alesund', label: 'Ålesund' },
-  { id: 'molde', label: 'Molde' },
-  { id: 'kristiansund', label: 'Kristiansund' },
-  { id: 'volda', label: 'Volda' },
-  { id: 'orsta', label: 'Ørsta' },
-  { id: 'vestnes', label: 'Vestnes' },
-  { id: 'sunndal', label: 'Sunndal' },
-  { id: 'stranda', label: 'Stranda' },
-  { id: 'ulstein', label: 'Ulstein' },
-  { id: 'surnadal', label: 'Surnadal' },
+  { id: 'dog', no: 'Hund tillatt', en: 'Dogs allowed', icon: 'dog' },
 ];
 
 export const I18nContext = createContext<{ lang: Lang; L: Strings }>({

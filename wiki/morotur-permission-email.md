@@ -1,6 +1,6 @@
 # Morotur permission email — draft
 
-**Status:** Draft for user review. Do not send without final read-through.
+**Status:** Sent 2026-05-20 from altukaleksandr2020@gmail.com to petter.jenset@mrfylke.no (cc post@mrfylke.no). Awaiting reply.
 
 ## Contact verification
 

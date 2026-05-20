@@ -97,7 +97,13 @@ def infer_tags(route: dict, route_geojson: dict, distance_meters: int | None) ->
         "child_friendly": ["barnevennlig", "familievennlig", "gapahuk"],
         "dog_ok": ["hund"],
         "public_transport_possible": ["buss", "kollektiv", "ferje", "hurtigbåt"],
-        "steep": ["bratt", "krevende stigning", "luftig"],
+        # "luftig" means airy/exposed terrain — implies exposure risk but
+        # not necessarily a steep gradient. Coastal cliff walks were being
+        # tagged `steep` and excluded for users with `avoid: ["steep"]`
+        # who could safely do them. The `exposed` tag isn't wired through
+        # the frontend yet (no `utsatt`/`exposed` in frontend/src/i18n.ts),
+        # so we drop "luftig" without introducing a new tag in this wave.
+        "steep": ["bratt", "krevende stigning"],
         "not_steep": [
             "flat",
             "flatt",

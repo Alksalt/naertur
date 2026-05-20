@@ -2,6 +2,67 @@
 
 A reverse-chronological log of decisions, findings, and unresolved questions. Newest entry on top.
 
+## 2026-05-20 — Night: place picker + 4 review-fix waves + Morotur email sent
+
+### What shipped today (Waves 1–4)
+
+**Wave 1 — clean-up after the morning review.** Test-DB destruction fixed (`tests/db.py` + `naertur_test` isolation), safety null-guard on `hike.geometry`, broader exception catching in safety, NVE bbox overlap closed (Sunnmøre vs. Romsdal at lat 62.55), admin import rate-limited, county hardcode dropped (3 sites → 1 constant + spatial bbox), `luftig` no longer auto-tags `steep`. End-to-end safety integration test (`tests/test_search_route_safety.py`) added — proves the brand promise across 30 calls.
+
+**Wave 2 — UX/copy polish.** Privacy footer rewritten to be truthful, ErrorBanner copy moved into i18n, 16 orphan keys removed; "tema" → "filtre", "Medium" → "Middels", "Vann/Lake" → "Vann/Water"; `safetyNote` now names yr.no + varsom.no; Morotur attribution chip on Result + Detail (both variants).
+
+**Wave 3 — biggest user-visible bug fixed.** The "Something went wrong" banner I'd been hitting was React's `SyntheticEvent` being passed as `overrideRejected` to `runSearch` and then `.filter()`'d as if it were an array — two `onSearch={() => runSearch()}` wrappers in MossApp.tsx:151 + TrailApp.tsx:147 fixed it. Plus `autoFocus` on Finding cancel for SR users. Morotur HTML scraper for ascent/highest_point fixed (regex targeted `fact__title` CSS class but live markup is `<dt>/<dd>`).
+
+**Place picker feature (the user's #1 priority).** Replaced the 10-town hardcoded list with a SSR-backed typeahead that covers all of MR — **3345 places imported** from Kartverket (Tettsted 60, By 6, Bygdelag 171, Boligfelt 160, Grend 136, Gard 2767, Tettbebyggelse 45). Used Kartverket's `/stedsnavn/v1` REST API. Walked the alphabet because SSR rejects `sok=*`; deduped by `stedsnummer`. The agent built it discovered the live API uses `fnr` (not `fylkesnummer`), lowercase navneobjekttype codes, and `øst` (Norwegian glyph) for longitude — documented in `app/services/ssr.py`. New `Place` model + Alembic 0004 + GiST/btree indexes. New `/api/places/search` (text + proximity blend, 0.65/0.35) and `/api/places/nearest` (50 km cap). Shared `PlacePicker` React component with `slots` prop so both variants skin it. GPS path now reverse-geocodes the user's coords to a real place name.
+
+**Ascent-aware randomizer.** New scoring bonus matches hike ascent to requested difficulty bands (easy 0–250 m, medium 200–600 m, hard 500+). Easy-only request paired with > 400 m climb is penalised −10 (and now actually evicted from the top-10 pool per the J-stream test).
+
+**Wave 4 — 6-reviewer pass + 5-stream fix wave.**
+- Trail PlacePicker active-row meta was unreadable grey-on-vermillion (~2.5:1). Fixed by removing the meta `color` override so it inherits the active button color → 5.28:1 (passes WCAG AA).
+- `aria-expanded` on combobox now reflects loading/empty/offline states too, not just `results > 0`.
+- Trail Result no longer renders literal "undefined kommune" when municipality is null.
+- `placeTypeLabels` i18n keys realigned to actual DB values (PascalCase: `Tettsted`, `By`, `Bygdelag (bygd)`, `Gard`, `Grend`, `Boligfelt`, `Tettbebyggelse`).
+- SSR pagination off-by-one (`>=` → `>`), happy-path savepoint, throttle on last page — all addressed in `app/services/ssr.py`.
+- **`POST /api/admin/refetch-elevation`** added; ran live → backfilled 42 NULL hikes; ascent populated **51/51**.
+- Entur stub now surfaces on Result for `public_transport` (informational chip, not alarmist).
+- **MockBadge** shows "PRØVEDATA · 5 turer" / "DEMO DATA · 5 hikes" when `VITE_USE_MOCK=true` so a deploy mis-flip can't silently serve fake data.
+- Polish: `useMemo` on picker slots, online/offline window listeners, `TOWNS_MR` dead export removed, empty-ascent guard (`—` instead of bare "m"), `onMouseEnter` → `onMouseMove` on rows.
+
+### Morotur permission email
+
+- Drafted in `wiki/morotur-permission-email.md` in the morning, polished by a final-read agent (5 edits applied: corrected API endpoint, soft-deadline → three-option close, "ingen analyse" → "ingen tredjeparts sporing" since localStorage exists, em-dash in attribution, "formell bruksavtale på deres mal").
+- Created as Gmail draft via MCP; user reviewed and sent on 2026-05-20 to `petter.jenset@mrfylke.no`, cc `post@mrfylke.no`. Awaiting reply (expect 2–6 weeks for public-sector inbox).
+
+### Final state (this commit)
+
+- `uv run pytest -q`: **90 passed** (was 61 morning; +29 across wave fixes + new features).
+- `cd frontend && npm test`: **36 passed** (was 17; +19).
+- `npm run build`: 256.39 KiB / 76.95 KiB gzipped, 11 PWA precache entries. Clean.
+- `npm run lint`: clean.
+- Dev DB: 51 hikes (all with ascent populated), 3345 places, 51 places' worth of source_records pending audit.
+- Backend running at `http://127.0.0.1:8000`; frontend at `http://localhost:5173`.
+
+### Verdict shift
+
+Morning: **alpha-internal-only** (4 blockers, see earlier sections).
+End of day: **friend-of-a-friend / link-share-on-Facebook**. The single remaining gate to a wider share is Petter's reply to the Morotur email.
+
+### Notable architectural / pattern decisions worth re-using
+
+- **Per-row savepoint loop** for any importer (Morotur + SSR both use it). Failures get recorded as `failed` in `source_records` without aborting the batch.
+- **SSR alphabet-walk dedupe.** `sok=*` is forbidden by Kartverket; walking `a*…å*` with stedsnummer dedupe is the way.
+- **Spatial bbox filter** (`±2°lat × ±3°lon` via `ST_Within` + `ST_MakeEnvelope`) replaces a `county = ?` hardcode for national-readiness without touching importer code.
+- **`slots` prop on shared components.** PlacePicker carries 200+ lines of debounce/IME/keyboard/ARIA logic that both variants share; the variant injects only the visual chrome via a `slots` factory built inline from its `C` palette.
+- **Test-DB isolation via advisory lock + `DATABASE_URL` env shuffle** (`tests/db.py`). Avoids the catastrophic case where pytest TRUNCATEs the dev DB (the morning's hardest-to-debug regression).
+- **Generation counter + AbortController** for stale-search guards. PlacePicker uses AbortController; randomHike uses a module-level generation counter. Same idea, different surface.
+
+### Still open (queued for next wave)
+
+- `/about` route with data sources + privacy + scope + contact mailto.
+- CI workflow (no `.github/workflows/` yet). ~30-line yaml with postgis service container.
+- Kartverket DEM ingestion — replaces the Morotur HTML scraper, unlocks per-vertex elevation and slope-derived `steep` tag. ~1–2 days.
+- Vestland places import (`fnr=14`) — covers Stryn and adjacent hiking gateways. No code change required, just a different admin endpoint call.
+- Petter Jenset's reply. Until then, NO public Facebook share; friend-of-a-friend testing is fine with attribution + safetyNote already on every card.
+
 ## 2026-05-20 — Evening: frontend MVP + two hardening waves
 
 ### Frontend MVP shipped

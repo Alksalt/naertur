@@ -2,14 +2,15 @@ import { useTrailTheme } from '../theme';
 import { useI18n } from '../../../i18n';
 import { Icon } from '../components/Icon';
 import { TopoMap } from '../components/TopoMap';
-import { MONO } from '../styles';
+import { floatBtn, MONO } from '../styles';
 import { MOCK_HIKES } from '../../../api/mock';
 
 interface Props {
   phase: number; // 0..3
+  onCancel?: () => void;
 }
 
-export function Finding({ phase }: Props) {
+export function Finding({ phase, onCancel }: Props) {
   const C = useTrailTheme();
   const { L, lang } = useI18n();
   const heroHike = MOCK_HIKES[0];
@@ -24,6 +25,8 @@ export function Finding({ phase }: Props) {
   return (
     <div
       className="trail-app"
+      role="status"
+      aria-live="polite"
       style={{
         position: 'relative',
         width: '100%',
@@ -36,6 +39,23 @@ export function Finding({ phase }: Props) {
         overflow: 'hidden',
       }}
     >
+      {onCancel && (
+        <button
+          autoFocus
+          onClick={onCancel}
+          aria-label={L.backLabel}
+          className="ta-tap"
+          style={{
+            ...floatBtn(C),
+            position: 'absolute',
+            top: 22,
+            left: 18,
+            zIndex: 5,
+          }}
+        >
+          <Icon name="arrowL" size={17} color={C.ink} strokeWidth={1.8} />
+        </button>
+      )}
       <div style={{ position: 'absolute', inset: 0 }}>
         <TopoMap palette={C} hike={heroHike} drawOn={false} height="100%" mode="bg" showTrail={false} />
         <div

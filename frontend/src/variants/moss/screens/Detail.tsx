@@ -6,6 +6,7 @@ import { MapPlaceholder } from '../components/MapPlaceholder';
 import { SectionH } from '../primitives';
 import { glassBtn, glassPill, secondaryBtn } from '../styles';
 import { hexA } from '../../../format';
+import { openInMaps } from '../../../maps';
 import type { UiHike } from '../../../types';
 import type { SceneKey } from '../components/scenes/HikeScene';
 
@@ -56,7 +57,12 @@ export function Detail({ statusH, hike, onBack }: Props) {
           <div style={{ ...glassPill(C), fontSize: 12.5, padding: '6px 12px', fontWeight: 500 }}>
             {hike.name}
           </div>
-          <button aria-label={L.openInMaps} style={glassBtn(C)}>
+          <button
+            aria-label={L.openInMaps}
+            onClick={() => openInMaps(hike)}
+            disabled={!hike.trailhead}
+            style={{ ...glassBtn(C), opacity: hike.trailhead ? 1 : 0.4 }}
+          >
             <Icon name="map" size={18} color={C.ink} />
           </button>
         </div>
@@ -157,7 +163,18 @@ export function Detail({ statusH, hike, onBack }: Props) {
               </div>
               <div style={{ color: C.muted, fontSize: 12 }}>{L.parking}</div>
             </div>
-            <button style={{ ...secondaryBtn(C), height: 36, padding: '0 12px', fontSize: 13, width: 'auto' }}>
+            <button
+              onClick={() => openInMaps(hike)}
+              disabled={!hike.trailhead}
+              style={{
+                ...secondaryBtn(C),
+                height: 36,
+                padding: '0 12px',
+                fontSize: 13,
+                width: 'auto',
+                opacity: hike.trailhead ? 1 : 0.4,
+              }}
+            >
               <Icon name="map" size={14} color={C.ink} />
               {L.openInMaps}
             </button>
@@ -220,6 +237,32 @@ export function Detail({ statusH, hike, onBack }: Props) {
             }}
           >
             {L.safetyNote}
+          </div>
+          <div
+            style={{
+              marginTop: 8,
+              fontSize: 12,
+              color: C.muted,
+              lineHeight: 1.45,
+            }}
+          >
+            {L.attributionMorotur.split('morotur.no').map((part, i, arr) =>
+              i < arr.length - 1 ? (
+                <span key={i}>
+                  {part}
+                  <a
+                    href="https://morotur.no"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: C.muted, textDecoration: 'underline' }}
+                  >
+                    morotur.no
+                  </a>
+                </span>
+              ) : (
+                <span key={i}>{part}</span>
+              ),
+            )}
           </div>
         </div>
 

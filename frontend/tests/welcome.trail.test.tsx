@@ -22,4 +22,12 @@ describe('Welcome screen — trail variant', () => {
     render(<App />);
     expect(screen.getByText(/NÆRTUR · MØRE OG ROMSDAL · MVP/)).toBeInTheDocument();
   });
+
+  it('exposes the "Velg sted" place picker button (PlacePicker integration)', () => {
+    // After the F-trail wave the old TownPicker invocation was replaced with
+    // the variant-agnostic PlacePicker; the ghost CTA now reads `L.choosePlace`
+    // (Velg sted / Choose a place) instead of the legacy `L.chooseTown`.
+    render(<App />);
+    expect(screen.getByRole('button', { name: /Velg sted/ })).toBeInTheDocument();
+  });
 });

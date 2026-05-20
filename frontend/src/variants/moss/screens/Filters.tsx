@@ -6,6 +6,7 @@ import { MiniHeader, Section, Segment } from '../primitives';
 import { primaryBtn, tagBtn, transportBtn } from '../styles';
 import { hexA } from '../../../format';
 import { filterCandidates } from '../../../api/mock';
+import { isMockMode } from '../../../api/client';
 import { DEFAULT_FILTERS, type FilterState } from '../../../store';
 import type { Difficulty, LengthBucket, TransportMode } from '../../../types';
 
@@ -34,19 +35,22 @@ export function Filters({
 }: Props) {
   const C = useTheme();
   const { L, lang } = useI18n();
+  const mockMode = isMockMode();
 
   const candidateCount = useMemo(
     () =>
-      filterCandidates({
-        difficulty: filters.difficulty,
-        maxTravelMinutes: filters.maxTravel,
-        transport: filters.transport,
-        lengthBucket: filters.length ?? undefined,
-        tags: filters.tags,
-        avoid: filters.avoid,
-        rejectedHikeIds,
-      }).length,
-    [filters, rejectedHikeIds],
+      mockMode
+        ? filterCandidates({
+            difficulty: filters.difficulty,
+            maxTravelMinutes: filters.maxTravel,
+            transport: filters.transport,
+            lengthBucket: filters.length ?? undefined,
+            tags: filters.tags,
+            avoid: filters.avoid,
+            rejectedHikeIds,
+          }).length
+        : null,
+    [mockMode, filters, rejectedHikeIds],
   );
 
   const togTag = (id: string) =>
@@ -103,21 +107,23 @@ export function Filters({
         statusH={statusH}
         backLabel={L.backLabel}
         right={
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '5px 10px 5px 8px',
-              borderRadius: 999,
-              background: C.chip,
-              fontSize: 12.5,
-              color: C.muted,
-            }}
-          >
-            <Icon name="location" size={13} color={C.muted} />
-            <span style={{ color: C.ink, fontWeight: 500 }}>{locationLabel ?? 'Ålesund'}</span>
-          </div>
+          locationLabel ? (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '5px 10px 5px 8px',
+                borderRadius: 999,
+                background: C.chip,
+                fontSize: 12.5,
+                color: C.muted,
+              }}
+            >
+              <Icon name="location" size={13} color={C.muted} />
+              <span style={{ color: C.ink, fontWeight: 500 }}>{locationLabel}</span>
+            </div>
+          ) : null
         }
       />
 
@@ -255,13 +261,11 @@ export function Filters({
           }}
         >
           <button onClick={() => setFilters(DEFAULT_FILTERS)} style={resetLink}>
-            {lang === 'no' ? 'Tilbakestill filtre' : 'Reset filters'}
+            {L.resetFilters}
           </button>
           {rejectedHikeIds.length > 0 && (
             <button onClick={onClearRejected} style={resetLink}>
-              {lang === 'no'
-                ? `Tøm avviste turer (${rejectedHikeIds.length})`
-                : `Clear rejected (${rejectedHikeIds.length})`}
+              {L.clearRejected(rejectedHikeIds.length)}
             </button>
           )}
         </div>
@@ -280,9 +284,7 @@ export function Filters({
               lineHeight: 1.45,
             }}
           >
-            {lang === 'no'
-              ? 'Ingen turer passet — løs opp filtrene eller tøm avviste turer.'
-              : 'No hikes match — loosen filters or clear rejected hikes.'}
+            {L.filtersNoMatch}
           </div>
         )}
       </div>
@@ -305,16 +307,18 @@ export function Filters({
         >
           <Icon name="compass" size={22} color={C.primaryInk} />
           {L.findHike}
-          <span
-            style={{
-              marginLeft: 'auto',
-              fontSize: 12,
-              opacity: 0.7,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {candidateCount} {L.hikesUnit}
-          </span>
+          {candidateCount !== null && (
+            <span
+              style={{
+                marginLeft: 'auto',
+                fontSize: 12,
+                opacity: 0.7,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {candidateCount} {L.hikesUnit}
+            </span>
+          )}
         </button>
       </div>
     </div>

@@ -90,3 +90,73 @@ class ImportMoroturResponse(BaseModel):
     route_ids: list[int] = Field(alias="routeIds")
     errors: list[str] = Field(default_factory=list)
 
+
+class PlaceResult(BaseModel):
+    model_config = _API_CONFIG
+    id: UUID
+    name: str
+    place_type: str = Field(alias="placeType")
+    kommune: str | None = None
+    fylke: str
+    location: Location
+
+
+class PlaceSearchResponse(BaseModel):
+    model_config = _API_CONFIG
+    query: str
+    results: list[PlaceResult]
+
+
+class PlaceNearestResponse(BaseModel):
+    model_config = _API_CONFIG
+    nearest: PlaceResult | None = None
+
+
+class ImportSsrRequest(BaseModel):
+    model_config = _API_CONFIG
+    fnr: str | None = None
+    place_types: list[str] | None = Field(default=None, alias="placeTypes")
+
+
+class ImportSsrResponse(BaseModel):
+    model_config = _API_CONFIG
+    imported: int
+    updated: int
+    failed: int
+    skipped: int
+    errors: list[str] = Field(default_factory=list)
+
+
+class RefetchElevationRequest(BaseModel):
+    """Selective backfill of ascent_meters / highest_point_meters.
+
+    ``route_ids`` is optional — when omitted, every Morotur hike with a
+    NULL ``ascent_meters`` is refetched. This is the post-Wave-3 backfill
+    path: the elevation scraper was only added in Wave 3, so the 42 hikes
+    imported before that landed with NULL ascent + NULL highest_point and
+    need a re-scrape of the existing Morotur HTML.
+    """
+
+    model_config = _API_CONFIG
+    route_ids: list[int] | None = Field(default=None, alias="routeIds")
+
+
+class RefetchElevationResponse(BaseModel):
+    """Result of a /api/admin/refetch-elevation run.
+
+    ``refetched`` counts hikes whose ``ascent_meters`` actually moved from
+    NULL to a value. ``failed`` counts hikes whose HTML scrape errored
+    out, and ``skipped`` counts hikes that were targeted but whose HTML
+    still didn't surface an ascent number (Morotur doesn't publish it for
+    every route). ``route_ids`` is the resolved list of Morotur route ids
+    that were targeted, so the operator can replay or diff against
+    follow-up runs.
+    """
+
+    model_config = _API_CONFIG
+    refetched: int
+    failed: int
+    skipped: int
+    route_ids: list[int] = Field(alias="routeIds")
+    errors: list[str] = Field(default_factory=list)
+

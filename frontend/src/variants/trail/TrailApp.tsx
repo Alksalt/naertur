@@ -8,6 +8,7 @@ import { Finding } from './screens/Finding';
 import { Result } from './screens/Result';
 import { Detail } from './screens/Detail';
 import { ErrorBanner } from './ErrorBanner';
+import { MockBadge } from '../../components/MockBadge';
 import { randomHike, NoCandidatesError, StaleSearchError } from '../../api/client';
 import type { Location, Screen, UiSearchResponse } from '../../types';
 import './animations.css';
@@ -27,6 +28,7 @@ export function TrailApp() {
   const [result, setResult] = useState<UiSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<'no_candidates' | 'error' | null>(null);
   const [phase, setPhase] = useState<number>(0);
+  const searchRunId = useRef(0);
 
   const palette = TRAIL_PALETTES[themeName] ?? TRAIL_PALETTES.trailhead;
   const L = I18N[lang];
@@ -53,6 +55,7 @@ export function TrailApp() {
 
   const runSearch = useCallback(
     async (overrideRejected?: string[]) => {
+      const myRun = ++searchRunId.current;
       setScreen('finding');
       setPhase(0);
       setSearchError(null);
@@ -74,12 +77,12 @@ export function TrailApp() {
           }),
           minDelay,
         ]);
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || myRun !== searchRunId.current) return;
         setResult(r);
         setScreen('result');
       } catch (e) {
         if (e instanceof StaleSearchError) return;
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || myRun !== searchRunId.current) return;
         const msg = e instanceof NoCandidatesError ? 'no_candidates' : 'error';
         setSearchError(msg);
         setScreen('filters');
@@ -91,6 +94,11 @@ export function TrailApp() {
     },
     [filters, coords, rejected],
   );
+
+  const handleCancelFinding = useCallback(() => {
+    searchRunId.current += 1;
+    setScreen('filters');
+  }, []);
 
   const handleLocationGranted = useCallback(
     (label: string, _sub?: string, c?: Location) => {
@@ -137,13 +145,13 @@ export function TrailApp() {
           rejectedHikeIds={rejected}
           onClearRejected={handleClearRejected}
           onBack={() => setScreen('welcome')}
-          onSearch={runSearch}
+          onSearch={() => runSearch()}
         />
         {searchError && <ErrorBanner kind={searchError} onDismiss={() => setSearchError(null)} />}
       </>
     );
   } else if (screen === 'finding') {
-    body = <Finding phase={phase} />;
+    body = <Finding phase={phase} onCancel={handleCancelFinding} />;
   } else if (screen === 'result' && result) {
     body = (
       <Result
@@ -192,6 +200,7 @@ export function TrailApp() {
         >
           {body}
         </div>
+        <MockBadge />
       </I18nContext.Provider>
     </TrailThemeContext.Provider>
   );

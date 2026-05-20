@@ -58,8 +58,20 @@ def test_avalanche_missing_record_is_unavailable() -> None:
     assert "avalanche_data_unavailable" in risk.reasons
 
 
-def test_avalanche_unknown_level_is_unavailable() -> None:
+def test_avalanche_zero_level_is_no_rating_today() -> None:
+    # DangerLevel="0" is NVE's "no rating issued today" signal (normal during
+    # the non-avalanche season). It is distinct from a service failure and
+    # gets its own reason so the audit trail / UI can tell them apart.
     risk = SafetyService.evaluate_avalanche({"DangerLevel": "0"})
+    assert risk.status == "check_conditions"
+    assert "avalanche_no_rating_today" in risk.reasons
+    assert "avalanche_data_unavailable" not in risk.reasons
+
+
+def test_avalanche_unparseable_level_is_unavailable() -> None:
+    # A garbage / non-numeric DangerLevel is treated as a failure mode,
+    # not as "no rating today" — we genuinely cannot interpret it.
+    risk = SafetyService.evaluate_avalanche({"DangerLevel": "wat"})
     assert risk.status == "check_conditions"
     assert "avalanche_data_unavailable" in risk.reasons
 
@@ -176,9 +188,45 @@ def test_met_user_agent_rejects_whitespace() -> None:
         Settings(met_user_agent="   ")
 
 
-def test_met_client_refuses_to_init_without_user_agent() -> None:
-    with pytest.raises(RuntimeError):
+def test_met_client_refuses_to_init_without_user_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MET client must refuse to initialise without a User-Agent.
+
+    The project ``.env`` ships ``MET_USER_AGENT`` set to a real value, and
+    ``pydantic-settings`` reads ``.env`` on top of OS env vars. Just calling
+    ``monkeypatch.delenv("MET_USER_AGENT")`` is therefore not enough — the
+    ``.env`` file would still be consulted by the next ``Settings()`` call.
+
+    We instead build a Settings instance with ``_env_file=None`` (disabling
+    the ``.env`` lookup entirely) and combine it with
+    ``monkeypatch.delenv`` so the OS env is also clean. ``get_settings``'
+    ``@lru_cache`` is replaced via ``monkeypatch.setattr`` at both the
+    config module AND the ``app.services.met`` module's import site (the
+    ``from`` import binds a separate reference to the function). The
+    monkeypatch is torn down automatically by pytest, restoring the original
+    cached settings for subsequent tests in the same process.
+    """
+
+    from app.core import config as config_module
+    from app.services import met as met_module
+
+    monkeypatch.delenv("MET_USER_AGENT", raising=False)
+    config_module.get_settings.cache_clear()
+
+    def _no_user_agent_settings() -> config_module.Settings:
+        return config_module.Settings(_env_file=None, met_user_agent=None)
+
+    monkeypatch.setattr(config_module, "get_settings", _no_user_agent_settings)
+    monkeypatch.setattr(met_module, "get_settings", _no_user_agent_settings)
+
+    with pytest.raises(RuntimeError, match="MET User-Agent is not configured"):
         MetClient(user_agent=None)
+
+    # Monkeypatch teardown restores both the ``get_settings`` rebind and the
+    # ``MET_USER_AGENT`` env var. We don't need an explicit cache_clear()
+    # here because the cleared LRU cache will recompute on next access and
+    # see the restored env value at that point.
 
 
 @pytest.mark.asyncio

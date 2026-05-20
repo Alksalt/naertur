@@ -6,6 +6,7 @@ import { SafetyStrip, StatBlock } from '../primitives';
 import { fmtMinShort, todayStamp } from '../utils';
 import { floatBtn, primaryCta, smallGhost, MONO } from '../styles';
 import { reasonLabel } from '../../../reasons';
+import { openInMaps } from '../../../maps';
 import { useCountUp } from '../hooks/useCountUp';
 import type { UiSearchResponse } from '../../../types';
 
@@ -104,7 +105,13 @@ export function Result({
             <span style={{ color: C.vermillion }}>●</span>
             {hike.id.toUpperCase().replace('-', ' / ')}
           </div>
-          <button aria-label={L.openInMaps} className="ta-tap" style={floatBtn(C)}>
+          <button
+            aria-label={L.openInMaps}
+            onClick={() => openInMaps(hike)}
+            disabled={!hike.trailhead}
+            className="ta-tap"
+            style={{ ...floatBtn(C), opacity: hike.trailhead ? 1 : 0.4 }}
+          >
             <Icon name="map" size={17} color={C.ink} strokeWidth={1.8} />
           </button>
         </div>
@@ -144,7 +151,8 @@ export function Result({
             {hike.name}
           </h1>
           <div style={{ marginTop: 8, color: C.graphite, fontSize: 14, fontWeight: 500 }}>
-            {hike.municipality} kommune · {L.counties[hike.county] ?? hike.county}
+            {hike.municipality ? `${hike.municipality} kommune · ` : ''}
+            {L.counties[hike.county] ?? hike.county}
           </div>
         </div>
 
@@ -162,10 +170,34 @@ export function Result({
           }}
         >
           <StatBlock C={C} kind="len" label={L.distance} value={km.toFixed(1).replace('.', ',')} unit="km" />
-          <StatBlock C={C} kind="asc" label={L.ascent} value={Math.round(asc)} unit="m" />
+          <StatBlock
+            C={C}
+            kind="asc"
+            label={L.ascent}
+            // Guard against null/undefined/0 ascent so the cell doesn't
+            // render as a bare "0 m" or "  m" — falsy → em-dash, no unit.
+            value={hike.ascentMeters ? Math.round(asc) : '—'}
+            unit={hike.ascentMeters ? 'm' : undefined}
+          />
           <StatBlock C={C} kind="dur" label={L.duration} value={fmtMinShort(Math.round(dur), lang)} />
           <StatBlock C={C} kind="trv" label={L.travel} value={Math.round(trv)} unit={L.minutes} last />
         </div>
+
+        {result.transport?.status === 'unverified_until_entur' && (
+          <div
+            role="note"
+            className="trail-fade-up"
+            style={{
+              marginTop: 10,
+              fontSize: 12,
+              color: C.sub,
+              lineHeight: 1.4,
+              animationDelay: '140ms',
+            }}
+          >
+            {L.transportUnverified}
+          </div>
+        )}
 
         {result.matchReasons.length > 0 && (
           <div className="trail-fade-up" style={{ marginTop: 22, animationDelay: '180ms' }}>
@@ -252,6 +284,32 @@ export function Result({
                 </span>
               );
             })}
+          </div>
+          <div
+            style={{
+              marginTop: 10,
+              fontSize: 12,
+              color: C.sub,
+              lineHeight: 1.4,
+            }}
+          >
+            {L.attributionMorotur.split('morotur.no').map((part, i, arr) =>
+              i < arr.length - 1 ? (
+                <span key={i}>
+                  {part}
+                  <a
+                    href="https://morotur.no"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: C.sub, textDecoration: 'underline' }}
+                  >
+                    morotur.no
+                  </a>
+                </span>
+              ) : (
+                <span key={i}>{part}</span>
+              ),
+            )}
           </div>
         </div>
 

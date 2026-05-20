@@ -26,7 +26,12 @@ class Hike(Base):
     summary: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     municipalities: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    county: Mapped[str] = mapped_column(String(128), nullable=False, default="Møre og Romsdal")
+    # `county` stays NOT NULL but no longer carries a default. The default
+    # previously baked Møre og Romsdal into the schema, which blocks adding
+    # any non-MR source without an Alembic migration. Each importer is
+    # responsible for naming the county it imports for (see
+    # `app.services.morotur.MOROTUR_COUNTY`).
+    county: Mapped[str] = mapped_column(String(128), nullable=False)
     difficulty: Mapped[str] = mapped_column(String(32), nullable=False)
     distance_meters: Mapped[int | None] = mapped_column(Integer)
     duration_minutes: Mapped[int | None] = mapped_column(Integer)
@@ -96,3 +101,43 @@ class SafetySnapshot(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     hike: Mapped[Hike] = relationship(back_populates="safety_snapshots")
+
+
+class Place(Base):
+    """Settlement / point-of-orientation row sourced from Kartverket SSR.
+
+    Carries a denormalised copy of the upstream record so the typeahead /
+    nearest endpoints can answer without a join to the original payload.
+    ``name_lower`` powers a btree prefix index for ILIKE-style typeahead;
+    ``name_lower_ascii`` is the same string with Norwegian-specific glyphs
+    folded (``ø→o``, ``æ→ae``, ``å→aa``) so a user typing ``bo`` finds ``Bø``.
+    The folding is done at import time, not query time, so the prefix btree
+    can serve both columns.
+    """
+
+    __tablename__ = "places"
+    __table_args__ = (
+        UniqueConstraint("source", "source_id", name="uq_places_source_source_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_lower: Mapped[str] = mapped_column(String(255), nullable=False)
+    name_lower_ascii: Mapped[str] = mapped_column(String(255), nullable=False)
+    place_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    kommune_name: Mapped[str | None] = mapped_column(String(128))
+    kommune_number: Mapped[str | None] = mapped_column(String(8))
+    fylke_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    fylke_number: Mapped[str] = mapped_column(String(4), nullable=False)
+    location: Mapped[object] = mapped_column(
+        Geometry("POINT", srid=4326, spatial_index=False), nullable=False
+    )
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

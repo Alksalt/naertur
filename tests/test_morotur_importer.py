@@ -25,8 +25,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.db.models import Hike, HikeGeometry, SourceRecord
 from app.services.morotur import MoroturClient, MoroturImporter
+from tests.db import TEST_DATABASE_URL
 
-TEST_DATABASE_URL = "postgresql+asyncpg://naertur:naertur@localhost:5432/naertur"
+# IMPORTANT: TEST_DATABASE_URL points at ``naertur_test``, NOT ``naertur``.
+# The TRUNCATE in the per-test fixture below would otherwise wipe the live
+# dev importer state. ``tests/db.py`` is the single source of truth for the
+# test DB connection string.
+
 TEST_MOROTUR_BASE_URL = "https://morotur.test"
 
 
@@ -65,7 +70,7 @@ def _good_route(route_id: int, seasons: list[Any] | None = None) -> dict[str, An
 
 
 @pytest_asyncio.fixture
-async def session() -> AsyncIterator[AsyncSession]:
+async def session(bootstrap_test_database: str) -> AsyncIterator[AsyncSession]:
     """Per-test engine + session.
 
     A fresh engine is created per test to keep asyncpg connections bound to
@@ -73,12 +78,17 @@ async def session() -> AsyncIterator[AsyncSession]:
     per test). If the DB is unreachable, the test is skipped rather than
     failing — laptops without Docker should still pass unit-only runs.
 
+    Depends on ``bootstrap_test_database`` (session-scoped) to ensure
+    ``naertur_test`` exists with PostGIS installed and Alembic head applied
+    BEFORE any TRUNCATE runs against it. Without this, a fresh checkout
+    would fail with "relation does not exist".
+
     We use TRUNCATE (CASCADE) for hard isolation before yielding, instead of
     a savepoint-wrapped outer transaction. The importer itself calls
     session.commit() in the unit under test, which would prematurely close
     any outer transaction we tried to wrap around it.
     """
-    engine = create_async_engine(TEST_DATABASE_URL, pool_pre_ping=True)
+    engine = create_async_engine(bootstrap_test_database, pool_pre_ping=True)
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
@@ -111,6 +121,20 @@ def _mock_morotur(router: respx.Router, route_id: int, route: dict, geojson: dic
     else:
         router.get(f"{TEST_MOROTUR_BASE_URL}/api/v2/geojson/{route_id}").mock(
             return_value=httpx.Response(200, json=geojson)
+        )
+
+    # The importer also fetches the public route HTML for elevation scraping
+    # (added in a parallel stream as ``_fetch_elevation`` in morotur.py).
+    # Mock the slug URL so respx-strict doesn't trip on the unmocked GET.
+    # We only register this when the geojson would actually let
+    # upsert_route reach the elevation step — otherwise ``assert_all_called``
+    # would complain that the slug mock was never hit. The malformed-geojson
+    # test deliberately fails before that point and so doesn't need it.
+    slug = route.get("slug")
+    coordinates = (geojson or {}).get("geometry", {}).get("coordinates") or []
+    if slug and len(coordinates) >= 2:
+        router.get(f"{TEST_MOROTUR_BASE_URL}/tur/{slug}").mock(
+            return_value=httpx.Response(200, text="")
         )
 
 

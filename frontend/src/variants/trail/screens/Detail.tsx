@@ -6,6 +6,7 @@ import { ElevationChart } from '../components/ElevationChart';
 import { SectionLabel } from '../primitives';
 import { floatBtn, MONO } from '../styles';
 import { fmtDistanceKm } from '../../../format';
+import { openInMaps } from '../../../maps';
 import type { UiHike } from '../../../types';
 
 interface Props {
@@ -75,7 +76,13 @@ export function Detail({ statusH, hike, onBack }: Props) {
           >
             {hike.name}
           </div>
-          <button aria-label={L.openInMaps} className="ta-tap" style={floatBtn(C)}>
+          <button
+            aria-label={L.openInMaps}
+            onClick={() => openInMaps(hike)}
+            disabled={!hike.trailhead}
+            className="ta-tap"
+            style={{ ...floatBtn(C), opacity: hike.trailhead ? 1 : 0.4 }}
+          >
             <Icon name="map" size={17} color={C.ink} strokeWidth={1.8} />
           </button>
         </div>
@@ -250,6 +257,32 @@ export function Detail({ statusH, hike, onBack }: Props) {
           }}
         >
           {L.safetyNote}
+        </div>
+        <div
+          style={{
+            padding: '4px 0 10px',
+            fontSize: 12,
+            color: C.sub,
+            lineHeight: 1.45,
+          }}
+        >
+          {L.attributionMorotur.split('morotur.no').map((part, i, arr) =>
+            i < arr.length - 1 ? (
+              <span key={i}>
+                {part}
+                <a
+                  href="https://morotur.no"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ color: C.sub, textDecoration: 'underline' }}
+                >
+                  morotur.no
+                </a>
+              </span>
+            ) : (
+              <span key={i}>{part}</span>
+            ),
+          )}
         </div>
 
         <a

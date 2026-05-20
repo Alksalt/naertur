@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
-from app.db.models import Hike
+from app.db.models import Hike, HikeGeometry
 from app.schemas import SearchRequest, SearchResponse, TransportResult
 from app.services.geo import haversine_meters, trailhead_from_geojson
 from app.services.hikes import hike_summary
@@ -55,8 +55,38 @@ class SearchService:
             rejected_reasons=[],
         )
 
+    # Bounding-box halfwidth around the user used to prefilter candidates
+    # before the per-hike haversine. ±2° lat × ±3° lon is roughly an
+    # MR-sized region (~220 km N-S, ~150 km E-W at 62°N), which is wide
+    # enough to keep every realistic car-travel candidate in scope while
+    # still cutting national result sets down to a tractable size. When
+    # the request has no `location`, no spatial filter runs and every
+    # hike is loaded — preserves prior behaviour for browser-only flows.
+    _LOCATION_BBOX_LAT_HALFWIDTH_DEG = 2.0
+    _LOCATION_BBOX_LON_HALFWIDTH_DEG = 3.0
+
     async def load_hikes(self, session: AsyncSession, request: SearchRequest) -> list[Hike]:
-        stmt = select(Hike).options(selectinload(Hike.geometry)).where(Hike.county == "Møre og Romsdal")
+        # National-ready: filter by SPATIAL proximity to the user, never by
+        # county. Filtering by `county == "Møre og Romsdal"` here silently
+        # dropped any future non-MR import (e.g. an Oslo or Trondheim
+        # source) from search results despite living in the same DB. The
+        # brand promise is national-ready architecture; the filter shape
+        # must match that promise.
+        stmt = select(Hike).options(selectinload(Hike.geometry))
+        if request.location is not None:
+            lat = request.location.lat
+            lon = request.location.lon
+            stmt = stmt.join(Hike.geometry).where(
+                HikeGeometry.trailhead.ST_Within(
+                    func.ST_MakeEnvelope(
+                        lon - self._LOCATION_BBOX_LON_HALFWIDTH_DEG,
+                        lat - self._LOCATION_BBOX_LAT_HALFWIDTH_DEG,
+                        lon + self._LOCATION_BBOX_LON_HALFWIDTH_DEG,
+                        lat + self._LOCATION_BBOX_LAT_HALFWIDTH_DEG,
+                        4326,
+                    )
+                )
+            )
         if request.difficulty:
             stmt = stmt.where(Hike.difficulty.in_(request.difficulty))
         if request.rejected_hike_ids:

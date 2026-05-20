@@ -1,7 +1,10 @@
 import type { SearchRequest, UiSearchResponse } from '../types';
 import { pickRandom } from './mock';
 
-const USE_MOCK = (import.meta.env.VITE_USE_MOCK ?? 'true') === 'true';
+export function isMockMode(): boolean {
+  return (import.meta.env.VITE_USE_MOCK ?? 'true') === 'true';
+}
+
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
 
 export class NoCandidatesError extends Error {
@@ -31,13 +34,21 @@ export function sanitizeRejected(ids: string[]): string[] {
   // Backend expects UUIDs. Mock-mode IDs (`morotur-1950`) are valid as
   // strings but would fail Pydantic's UUID coercion when we flip to live.
   // Filter to UUID-shape so the rest of the search still goes through.
-  return ids.filter((id) => typeof id === 'string' && UUID_RE.test(id));
+  const kept = ids.filter((id) => typeof id === 'string' && UUID_RE.test(id));
+  if (kept.length !== ids.length) {
+    const dropped = ids.length - kept.length;
+    console.warn(
+      `[naertur] dropped ${dropped} non-UUID rejected hike ID(s) when switching to live backend. ` +
+        `These are likely leftover mock IDs from when VITE_USE_MOCK=true.`,
+    );
+  }
+  return kept;
 }
 
 export async function randomHike(req: SearchRequest): Promise<UiSearchResponse> {
   const myGen = ++generation;
 
-  if (USE_MOCK) {
+  if (isMockMode()) {
     await new Promise((r) => setTimeout(r, 350));
     if (myGen !== generation) throw new StaleSearchError();
     const result = pickRandom(req);

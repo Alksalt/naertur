@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTrailTheme } from '../theme';
-import { useI18n, TOWNS_MR } from '../../../i18n';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTrailTheme, type TrailPalette } from '../theme';
+import { useI18n } from '../../../i18n';
 import { Icon } from '../components/Icon';
 import { TopoMap } from '../components/TopoMap';
-import { Wordmark, FactCell } from '../primitives';
+import { Wordmark } from '../primitives';
 import { primaryCta, ghostCta, iconBox, MONO } from '../styles';
 import type { Lang, Location, TrailThemeName } from '../../../types';
 import { MOCK_HIKES } from '../../../api/mock';
+import { PlacePicker, type PlacePickerSlots } from '../../../components/PlacePicker';
+import { nearestPlace } from '../../../api/places';
 
 interface Props {
   statusH: number;
@@ -32,6 +34,11 @@ export function Welcome({
   const [picker, setPicker] = useState(false);
   const [locating, setLocating] = useState(false);
   const heroHike = MOCK_HIKES[0];
+  // Memoise the picker slots so PlacePicker only sees a new object identity
+  // when the palette changes — not on every Welcome re-render (e.g. locating
+  // state flips). Without this, slots is freshly allocated each render and
+  // would defeat any future memoisation inside PlacePicker.
+  const pickerSlots = useMemo(() => trailPlacePickerSlots(C), [C]);
 
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -48,13 +55,25 @@ export function Welcome({
     }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         if (!mountedRef.current) return;
-        setLocating(false);
-        onLocationGranted(L.locOk, undefined, {
+        const coords: Location = {
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
-        });
+        };
+        // Reverse-geocode to a human label; fall back to the generic locOk
+        // string if the lookup fails / times out / returns nothing.
+        let label = L.locOk;
+        try {
+          const nearest = await nearestPlace(coords.lat, coords.lon);
+          if (!mountedRef.current) return;
+          if (nearest) label = nearest.name;
+        } catch {
+          // swallow — fallback label already set
+        }
+        if (!mountedRef.current) return;
+        setLocating(false);
+        onLocationGranted(label, undefined, coords);
       },
       () => {
         if (!mountedRef.current) return;
@@ -103,24 +122,6 @@ export function Welcome({
           }}
         >
           <Wordmark C={C} size={20} />
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '5px 10px',
-              background: C.snow,
-              borderRadius: 4,
-              border: `1px solid ${C.hairline}`,
-              fontFamily: MONO,
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: 0.5,
-              color: C.graphite,
-            }}
-          >
-            <span style={{ color: C.vermillion }}>●</span> N 62.47° · Ø 6.15°
-          </div>
         </div>
         <div
           style={{
@@ -201,21 +202,7 @@ export function Welcome({
 
         <div style={{ flex: 1 }} />
 
-        <div
-          className="trail-fade-up"
-          style={{
-            display: 'flex',
-            borderTop: `1px solid ${C.hairline}`,
-            borderBottom: `1px solid ${C.hairline}`,
-            margin: '20px 0 16px',
-            padding: '10px 0',
-            animationDelay: '220ms',
-          }}
-        >
-          <FactCell C={C} label={L.factStripHikes} value="124" />
-          <FactCell C={C} label={L.factStripSeason} value={lang === 'no' ? 'Åpen' : 'Open'} />
-          <FactCell C={C} label={L.factStripAlert} value="0" last />
-        </div>
+        <div style={{ margin: '20px 0 4px', borderTop: `1px solid ${C.hairline}` }} />
 
         <div
           className="trail-fade-up"
@@ -238,7 +225,7 @@ export function Welcome({
             {locating ? L.locating : L.useLocation}
           </button>
           <button onClick={() => setPicker(true)} className="ta-tap" style={ghostCta(C)}>
-            {L.chooseTown}
+            {L.choosePlace}
           </button>
           <div
             style={{
@@ -293,133 +280,116 @@ export function Welcome({
       </div>
 
       {picker && (
-        <TownPicker C={C} onClose={() => setPicker(false)} onPick={(label) => {
-          setPicker(false);
-          onLocationGranted(label, 'valgt');
-        }} />
+        <PlacePicker
+          open
+          onClose={() => setPicker(false)}
+          onPick={({ label, location }) => {
+            setPicker(false);
+            onLocationGranted(label, undefined, location);
+          }}
+          slots={pickerSlots}
+          L={L}
+          closeIcon={<Icon name="close" size={18} color={C.ink} />}
+        />
       )}
     </div>
   );
 }
 
-function TownPicker({
-  C,
-  onClose,
-  onPick,
-}: {
-  C: ReturnType<typeof useTrailTheme>;
-  onClose: () => void;
-  onPick: (label: string) => void;
-}) {
-  const { L } = useI18n();
-  const closeRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    const previousActive = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      previousActive?.focus?.();
-    };
-  }, [onClose]);
-
-  const handleTab = useCallback((e: React.KeyboardEvent) => {
-    if (e.key !== 'Tab') return;
-    const focusable = e.currentTarget.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }, []);
-
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={L.chooseTown}
-      style={{
-        position: 'absolute',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        display: 'flex',
-        alignItems: 'flex-end',
-        zIndex: 10,
-      }}
-      onClick={onClose}
-      onKeyDown={handleTab}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          background: C.paper,
-          borderTopLeftRadius: 6,
-          borderTopRightRadius: 6,
-          padding: '20px 20px 28px',
-          maxHeight: '70%',
-          overflowY: 'auto',
-          borderTop: `1px solid ${C.hairline}`,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 14,
-          }}
-        >
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 19,
-              fontWeight: 700,
-              letterSpacing: -0.4,
-            }}
-          >
-            {L.chooseTown}
-          </h2>
-          <button ref={closeRef} onClick={onClose} aria-label={L.closeLabel} style={iconBox(C)}>
-            <Icon name="close" size={18} color={C.ink} />
-          </button>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {TOWNS_MR.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => onPick(t.label)}
-              style={{
-                background: C.snow,
-                border: `1px solid ${C.hairline}`,
-                borderRadius: 4,
-                padding: '13px 14px',
-                fontFamily: 'inherit',
-                fontSize: 14.5,
-                color: C.ink,
-                textAlign: 'left',
-                cursor: 'pointer',
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
+// Trail-variant skin for the variant-agnostic PlacePicker. Mirrors the
+// editorial / topographic visual language used by the rest of the trail
+// variant: sharp 4-6px radii on the sheet/inputs, MONO meta text, vermillion
+// accent on the active row, and the standard `iconBox(C)` for the close
+// button. Keep the typography choices in sync with the H1/CTA above so the
+// picker reads as one continuous surface rather than a foreign overlay.
+function trailPlacePickerSlots(C: TrailPalette): PlacePickerSlots {
+  return {
+    modalChrome: {
+      position: 'absolute',
+      inset: 0,
+      background: 'rgba(0,0,0,0.4)',
+      display: 'flex',
+      alignItems: 'flex-end',
+      zIndex: 10,
+    },
+    modalSurface: {
+      width: '100%',
+      background: C.paper,
+      borderTopLeftRadius: 6,
+      borderTopRightRadius: 6,
+      padding: '20px 20px 28px',
+      maxHeight: '70%',
+      overflowY: 'auto',
+      borderTop: `1px solid ${C.hairline}`,
+      fontFamily: '"Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif',
+      color: C.ink,
+    },
+    searchInput: {
+      width: '100%',
+      boxSizing: 'border-box',
+      height: 44,
+      padding: '0 12px',
+      border: `1px solid ${C.hairline}`,
+      borderRadius: 4,
+      background: C.snow,
+      color: C.ink,
+      fontFamily: MONO,
+      fontSize: 14,
+      letterSpacing: 0.1,
+      outline: 'none',
+    },
+    resultRow: (active: boolean) => ({
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      gap: 2,
+      width: '100%',
+      background: active ? C.vermillion : C.snow,
+      color: active ? C.vermillionInk : C.ink,
+      border: `1px solid ${active ? C.vermillion : C.hairline}`,
+      borderRadius: 4,
+      padding: '11px 14px',
+      fontFamily: 'inherit',
+      fontSize: 14.5,
+      textAlign: 'left',
+      cursor: 'pointer',
+      transition: 'background 140ms, color 140ms, border-color 140ms',
+    }),
+    resultName: {
+      fontSize: 14.5,
+      fontWeight: 500,
+      letterSpacing: -0.1,
+    },
+    resultMeta: {
+      // Intentionally no `color` — inherit from the parent <button>, whose
+      // color is set by `resultRow(active)` above (C.ink when idle,
+      // C.vermillionInk when active). Hard-coding C.sub here caused a
+      // grey-on-vermillion ~2.5:1 contrast failure on the active row.
+      // No opacity either — at 11px the meta is "small text" by WCAG, so it
+      // needs 4.5:1. Pure C.ink on C.snow gives ~15:1; pure C.vermillionInk
+      // on C.vermillion gives ~5.3:1 — both pass AA. Any opacity drop pulls
+      // the active state under 4.5:1.
+      fontFamily: MONO,
+      fontSize: 11,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    emptyState: {
+      marginTop: 12,
+      fontFamily: MONO,
+      fontSize: 11.5,
+      color: C.sub,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    status: {
+      marginTop: 12,
+      fontFamily: MONO,
+      fontSize: 11.5,
+      color: C.sub,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+    },
+    closeBtn: iconBox(C),
+  };
 }

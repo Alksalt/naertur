@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import httpx
@@ -18,6 +19,124 @@ from app.services.normalization import (
     season_months,
     strip_html,
 )
+
+# Morotur is the regional source for Møre og Romsdal. The county tag is set
+# at the importer (not at the model layer) so future sources can populate
+# Hike.county with their own region without leaking MR-specific defaults
+# into the schema.
+MOROTUR_COUNTY = "Møre og Romsdal"
+
+# Morotur's public ``/api/v2/routes/{id}`` JSON payload does not expose
+# ascent or highest-point fields (verified against routes 2, 100, 500,
+# 1000, 1950 on 2026-05-20). The numbers are rendered into the public
+# ``/tur/{slug}`` HTML page from the same Morotur DB, however, so we parse
+# them out of that page as a best-effort enrichment. Failure to fetch or
+# parse must NEVER block an import — both fields fall back to None.
+#
+# Morotur's template has shipped two label/value markup shapes that we have
+# seen in the wild:
+#   1. ``<dt>Stigning</dt><dd>324 m</dd>`` (terse description-list form)
+#   2. ``<div class="fact__title">Stigning</div><div class="fact__text">324 m</div>``
+# Either can appear depending on the route page version. The combined
+# regex below matches both label/value pairs so a future template flip
+# from divs to dt/dd (or vice-versa) does not silently drop ascent and
+# highest-point data into NULL again.
+_FACT_PAIR_RE = re.compile(
+    r"(?:"
+    r"<dt[^>]*>\s*([^<]+?)\s*</dt>\s*<dd[^>]*>\s*([^<]+?)\s*</dd>"
+    r"|"
+    r'<div\s+class="fact__title">\s*([^<]+?)\s*</div>\s*'
+    r'(?:<[^>]+>\s*)*'
+    r'<div\s+class="fact__text">\s*([^<]+?)\s*</div>'
+    r")",
+    re.IGNORECASE | re.DOTALL,
+)
+# Value strings are like "324 m", "324m", or "324 moh". We accept any of
+# those forms — the integer-extraction regex below just plucks the leading
+# number; the trailing unit is irrelevant once we know we are inside an
+# ascent / highest-point fact pair.
+_INT_FROM_TEXT_RE = re.compile(r"(\d+(?:[\s,.]\d+)?)")
+
+
+def _parse_meters(text: str | None) -> int | None:
+    """Pull an integer metre count out of a Morotur fact value like '324 m'.
+
+    Handles thin spaces and Norwegian decimal commas. Returns ``None`` when
+    the text is missing, non-numeric, or zero (Morotur uses 0 as a "not
+    measured" sentinel for some routes).
+    """
+
+    if not text:
+        return None
+    match = _INT_FROM_TEXT_RE.search(text)
+    if not match:
+        return None
+    raw = match.group(1).replace(" ", "").replace(" ", "").replace(",", ".")
+    try:
+        value = float(raw)
+    except ValueError:
+        return None
+    if value <= 0:
+        return None
+    return int(value)
+
+
+def parse_elevation_from_html(html_body: str) -> tuple[int | None, int | None]:
+    """Extract (ascent_meters, highest_point_meters) from a Morotur route page.
+
+    Looks for the ``Stigning`` (ascent) and ``Høyeste punkt`` / ``Høgaste
+    punkt`` (highest point) fact blocks rendered server-side on
+    ``/tur/{slug}``. Matches both ``<dt>/<dd>`` and
+    ``<div class="fact__title">/<div class="fact__text">`` markup shapes
+    so a future template flip on Morotur's side does not silently turn the
+    elevation fields back into NULL.
+
+    Returns ``(None, None)`` if a label is missing or value text cannot be
+    parsed — a fully-defensive parse so importer robustness never depends
+    on a brittle scrape.
+    """
+
+    if not html_body:
+        return None, None
+
+    ascent: int | None = None
+    highest_point: int | None = None
+    # ``findall`` returns one tuple per match with four capture groups —
+    # (dt_title, dd_value, div_title, div_value). Exactly one branch of
+    # the top-level alternation fires per match, so the other two slots
+    # are empty strings; collapse to a single (title, value) pair.
+    for dt_title, dd_value, div_title, div_value in _FACT_PAIR_RE.findall(html_body):
+        title = (dt_title or div_title).strip()
+        value = (dd_value or div_value).strip()
+        if not title or not value:
+            continue
+        title_lc = title.lower()
+        if "stigning" in title_lc:
+            ascent = _parse_meters(value)
+        elif (
+            "høyeste punkt" in title_lc
+            or "hoyeste punkt" in title_lc
+            or "høgaste punkt" in title_lc
+            or "hogaste punkt" in title_lc
+        ):
+            highest_point = _parse_meters(value)
+    return ascent, highest_point
+
+
+class MoroturUnavailable(RuntimeError):
+    """Raised when Morotur's discovery endpoint is unreachable or 5xx.
+
+    Carries the original status code (when known) so the admin route can
+    translate to an actionable 503. Per-route fetch failures are still
+    handled inside the importer's per-route savepoint and recorded as
+    failed source_records — only the discovery step short-circuits the
+    whole admin request, which would otherwise crash with an unhandled
+    httpx exception.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class MoroturClient:
@@ -41,9 +160,21 @@ class MoroturClient:
 
     async def discover_routes(self, limit: int = 25, tour_type: int = 0) -> list[int]:
         url = f"{self.base_url}/api/v2/routes"
-        response = await self._client.get(url, params={"tour_type": tour_type})
-        response.raise_for_status()
-        routes = response.json()
+        # Morotur occasionally 5xxs the discovery endpoint during their
+        # nightly index rebuild. The admin handler used to surface that as
+        # a bare 500 with no useful body; catching here lets us translate
+        # to an actionable 503 upstream without crashing the request.
+        try:
+            response = await self._client.get(url, params={"tour_type": tour_type})
+            response.raise_for_status()
+            routes = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise MoroturUnavailable(
+                f"Morotur discover_routes returned {exc.response.status_code}",
+                status_code=exc.response.status_code,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise MoroturUnavailable(f"Morotur discover_routes failed: {exc}") from exc
         return [int(item["id"]) for item in routes[:limit]]
 
     async def fetch_route(self, route_id: int) -> dict[str, Any]:
@@ -60,6 +191,24 @@ class MoroturClient:
         if isinstance(payload, dict) and payload.get("type") == "Feature":
             return payload
         raise ValueError(f"Morotur route {route_id} did not return route GeoJSON")
+
+    async def fetch_route_html(self, slug: str) -> str | None:
+        """Fetch the public route page so we can scrape ascent/highest point.
+
+        Returns ``None`` on any HTTP error so the importer can fall back to
+        leaving the elevation fields unset rather than failing the whole
+        route. The JSON v2 API does not expose these numbers, but they are
+        rendered into the HTML by Morotur from the same database row.
+        """
+
+        if not slug:
+            return None
+        try:
+            response = await self._client.get(f"{self.base_url}/tur/{slug}")
+            response.raise_for_status()
+        except httpx.HTTPError:
+            return None
+        return response.text
 
 
 class MoroturImporter:
@@ -125,6 +274,7 @@ class MoroturImporter:
         summary = description[:280] if description else None
         tags = infer_tags(route, geojson, distance_meters)
         difficulty = normalize_difficulty(route)
+        ascent_meters, highest_point_meters = await self._fetch_elevation(route.get("slug"))
 
         existing = await session.scalar(
             select(Hike)
@@ -138,7 +288,14 @@ class MoroturImporter:
         # the live smoke test.
         is_new = existing is None
         if is_new:
-            hike = Hike(source="morotur", source_id=source_id, source_url=source_url, name=route["name"])
+            hike = Hike(
+                source="morotur",
+                source_id=source_id,
+                source_url=source_url,
+                name=route["name"],
+                county=MOROTUR_COUNTY,
+                difficulty=difficulty,
+            )
             session.add(hike)
         else:
             hike = existing
@@ -149,12 +306,12 @@ class MoroturImporter:
         hike.summary = summary
         hike.description = description
         hike.municipalities = route.get("municipalities") or []
-        hike.county = "Møre og Romsdal"
+        hike.county = MOROTUR_COUNTY
         hike.difficulty = difficulty
         hike.distance_meters = distance_meters
         hike.duration_minutes = parse_duration_minutes(route.get("time_need"))
-        hike.ascent_meters = None
-        hike.highest_point_meters = None
+        hike.ascent_meters = ascent_meters
+        hike.highest_point_meters = highest_point_meters
         hike.season_months = season_months(route.get("seasons"))
         hike.tags = tags
         hike.transport_notes = strip_html(route.get("public_transport"))
@@ -177,6 +334,20 @@ class MoroturImporter:
             hike.geometry.trailhead = trailhead_element
             hike.geometry.route_geojson = geojson
         return hike
+
+    async def _fetch_elevation(self, slug: str | None) -> tuple[int | None, int | None]:
+        """Best-effort scrape of ascent and highest point from the public page.
+
+        Morotur's v2 JSON does not expose these fields; they only appear in
+        the rendered HTML. Any fetch or parse failure resolves to
+        ``(None, None)`` so the importer keeps working when Morotur changes
+        their template — the data is enrichment, not a correctness boundary.
+        """
+
+        html_body = await self.client.fetch_route_html(slug or "")
+        if html_body is None:
+            return None, None
+        return parse_elevation_from_html(html_body)
 
     async def upsert_source_record(
         self,

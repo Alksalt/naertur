@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 
-from app.api.routes import admin, health, search
+from app.api.routes import admin, health, places, search
 from app.core.config import get_settings, limiter
 from app.services.search import SearchService
 
@@ -64,4 +64,5 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(search.router, prefix="/api/search", tags=["search"])
+app.include_router(places.router, prefix="/api/places", tags=["places"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])

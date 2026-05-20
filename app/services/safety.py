@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,8 +47,21 @@ class SafetyService:
     ) -> SafetyResult:
         now = now or datetime.now(UTC)
         season_result = self.evaluate_season(hike, now)
-        if season_result.status == "not_recommended_now":
+        # Short-circuit on any decisive season outcome: ``not_recommended_now``
+        # blocks the hike outright, and ``check_conditions`` from season is
+        # only returned when season_months is empty (i.e. we have no season
+        # data to merge against). In both cases issuing MET + NVE calls is
+        # wasteful and would pollute the snapshot audit trail with provider
+        # data the caller would not see anyway (since season's reasons would
+        # be merged in).
+        if season_result.status in ("not_recommended_now", "check_conditions"):
             return season_result
+
+        # Defensive: a Hike row without a HikeGeometry row (e.g. partial
+        # import or a degraded state) must degrade to check_conditions, not
+        # raise AttributeError out of the request handler.
+        if hike.geometry is None:
+            return SafetyResult(status="check_conditions", reasons=["missing_geometry"])
 
         trailhead = trailhead_from_geojson(hike.geometry.route_geojson)
         if trailhead is None:
@@ -152,6 +166,11 @@ class SafetyService:
 
     @staticmethod
     def evaluate_avalanche(record: dict | None) -> SafetyResult:
+        # ``record is None`` means an actual failure (e.g. NVE unreachable
+        # or response array empty) — distinct from ``DangerLevel="0"`` which
+        # means NVE responded successfully but issued no rating today
+        # (normal during non-avalanche season). The two are reported with
+        # different reasons so the audit trail and UI can tell them apart.
         if record is None:
             return SafetyResult(
                 status="check_conditions",
@@ -162,7 +181,20 @@ class SafetyService:
             level = int(raw_level) if raw_level is not None else None
         except (TypeError, ValueError):
             level = None
-        if level is None or level <= 0:
+        if level is None:
+            return SafetyResult(
+                status="check_conditions",
+                reasons=["avalanche_data_unavailable"],
+            )
+        if level == 0:
+            # NVE explicitly publishes DangerLevel="0" outside the avalanche
+            # season ("no rating issued for today"). This is a normal state,
+            # not a service failure, so it gets its own reason.
+            return SafetyResult(
+                status="check_conditions",
+                reasons=["avalanche_no_rating_today"],
+            )
+        if level < 0:
             return SafetyResult(
                 status="check_conditions",
                 reasons=["avalanche_data_unavailable"],
@@ -235,9 +267,31 @@ class SafetyService:
 
     # ---- helpers for translating fetched results into SafetyResult ----
 
+    # Transient-failure exception types that ``asyncio.gather(...,
+    # return_exceptions=True)`` may surface from the upstream HTTP clients.
+    # ``MetUnavailable`` / ``NveUnavailable`` are our own domain exceptions
+    # raised by the clients when they detect a failure, but the clients
+    # themselves can still leak raw ``httpx.RequestError`` subclasses
+    # (TimeoutException, RemoteProtocolError, ReadError, ConnectError, …)
+    # if a connection drops *between* the protected ``try`` block and the
+    # JSON-decoding step. ``ValueError`` covers ``json.JSONDecodeError``
+    # (which subclasses ValueError) when an upstream returns 200 with a
+    # garbage body. Any of these is treated as a degraded-data signal —
+    # they must NEVER propagate out of the request handler as 500s.
+    _WEATHER_DEGRADED_EXCEPTIONS = (
+        MetUnavailable,
+        httpx.RequestError,
+        ValueError,
+    )
+    _AVALANCHE_DEGRADED_EXCEPTIONS = (
+        NveUnavailable,
+        httpx.RequestError,
+        ValueError,
+    )
+
     def _weather_from_outcome(self, outcome: object) -> SafetyResult:
         if isinstance(outcome, BaseException):
-            if isinstance(outcome, MetUnavailable):
+            if isinstance(outcome, self._WEATHER_DEGRADED_EXCEPTIONS):
                 return SafetyResult(
                     status="check_conditions",
                     reasons=["weather_data_unavailable"],
@@ -252,7 +306,7 @@ class SafetyService:
 
     def _avalanche_from_outcome(self, outcome: object) -> SafetyResult:
         if isinstance(outcome, BaseException):
-            if isinstance(outcome, NveUnavailable):
+            if isinstance(outcome, self._AVALANCHE_DEGRADED_EXCEPTIONS):
                 return SafetyResult(
                     status="check_conditions",
                     reasons=["avalanche_data_unavailable"],

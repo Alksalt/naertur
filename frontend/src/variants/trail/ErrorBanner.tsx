@@ -9,15 +9,8 @@ interface Props {
 
 export function ErrorBanner({ kind, onDismiss }: Props) {
   const C = useTrailTheme();
-  const { L, lang } = useI18n();
+  const { L } = useI18n();
   const noCand = kind === 'no_candidates';
-  const message = noCand
-    ? lang === 'no'
-      ? 'Ingen turer passet. Prøv andre filtre.'
-      : 'No hikes matched. Try other filters.'
-    : lang === 'no'
-      ? 'Noe gikk galt. Prøv igjen.'
-      : 'Something went wrong. Try again.';
   return (
     <div
       role="alert"
@@ -42,7 +35,16 @@ export function ErrorBanner({ kind, onDismiss }: Props) {
       <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 600, letterSpacing: 0.6, opacity: 0.85 }}>
         {noCand ? '00' : 'ERR'}
       </span>
-      <span style={{ flex: 1 }}>{message}</span>
+      <span style={{ flex: 1 }}>
+        {noCand ? (
+          <>
+            <strong style={{ fontWeight: 700 }}>{L.noCandidatesTitle}</strong>{' '}
+            <span style={{ opacity: 0.92 }}>{L.noCandidatesBody}</span>
+          </>
+        ) : (
+          L.genericErrorTitle
+        )}
+      </span>
       <button
         onClick={onDismiss}
         aria-label={L.closeLabel}

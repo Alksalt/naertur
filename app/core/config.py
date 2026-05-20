@@ -28,6 +28,32 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:5173", "http://localhost:3000"]
     )
 
+    # ---- Sentralt stedsnavnregister (SSR) -----------------------------------
+    # SSR is Kartverket's authoritative place-name service. NLOD 2.0, no auth.
+    # ``ssr_default_fnr`` is Møre og Romsdal's fylkesnummer ("15"); the import
+    # endpoint accepts an override.
+    #
+    # IMPORTANT: ``ssr_place_types`` carries the SSR ``navneobjekttype`` filter
+    # *codes* (camelCase), NOT the human-readable display strings. The /sted
+    # endpoint accepts the code form when filtering (verified against the live
+    # API on 2026-05-20 — ``navneobjekttype=Tettsted`` returns zero rows,
+    # ``navneobjekttype=tettsted`` returns the expected matches). The display
+    # form is what the API echoes back in each ``navn`` payload; the importer
+    # normalises both ends so /admin/import/ssr can be called with either.
+    ssr_base_url: str = "https://ws.geonorge.no/stedsnavn/v1"
+    ssr_default_fnr: str = "15"
+    ssr_place_types: list[str] = Field(
+        default_factory=lambda: [
+            "tettsted",
+            "by",
+            "bygdelagBygd",
+            "grend",
+            "gard",
+            "boligfelt",
+            "tettbebyggelse",
+        ]
+    )
+
     @field_validator("met_user_agent")
     @classmethod
     def _validate_met_user_agent(cls, value: str | None) -> str | None:

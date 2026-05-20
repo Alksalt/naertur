@@ -15,6 +15,32 @@ class Candidate:
     match_reasons: list[str]
 
 
+_ASCENT_BANDS = [
+    ("easy", 0, 250),
+    ("medium", 200, 600),
+    ("hard", 500, 10_000),
+]
+
+
+def _ascent_difficulty_bonus(ascent_m: int, requested: set[str]) -> int:
+    """Bonus when ascent matches one of the requested difficulty bands.
+
+    Bands overlap by design: a 220 m climb is reasonable for both easy and
+    medium. Penalises only the clearest mismatch — easy-only request paired
+    with a >400 m climb — so we don't double-penalise hikes that already
+    failed the hard difficulty filter at the search layer.
+    """
+    in_band = any(
+        difficulty in requested and low <= ascent_m <= high
+        for difficulty, low, high in _ASCENT_BANDS
+    )
+    if in_band:
+        return 6
+    if "easy" in requested and "medium" not in requested and ascent_m > 400:
+        return -10
+    return 0
+
+
 def score_candidate(candidate: Candidate, request: SearchRequest) -> int:
     hike = candidate.hike
     score = 0
@@ -28,6 +54,8 @@ def score_candidate(candidate: Candidate, request: SearchRequest) -> int:
         score += 6
     if hike.duration_minutes:
         score += 4
+    if hike.ascent_meters is not None and request.difficulty:
+        score += _ascent_difficulty_bonus(hike.ascent_meters, set(request.difficulty))
     return score
 
 

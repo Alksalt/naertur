@@ -13,6 +13,7 @@ import {
   transportTile,
 } from '../styles';
 import { filterCandidates } from '../../../api/mock';
+import { isMockMode } from '../../../api/client';
 import { DEFAULT_FILTERS, type FilterState } from '../../../store';
 import type { Difficulty, LengthBucket, TransportMode } from '../../../types';
 
@@ -41,19 +42,22 @@ export function Filters({
 }: Props) {
   const C = useTrailTheme();
   const { L, lang } = useI18n();
+  const mockMode = isMockMode();
 
   const candidateCount = useMemo(
     () =>
-      filterCandidates({
-        difficulty: filters.difficulty,
-        maxTravelMinutes: filters.maxTravel,
-        transport: filters.transport,
-        lengthBucket: filters.length ?? undefined,
-        tags: filters.tags,
-        avoid: filters.avoid,
-        rejectedHikeIds,
-      }).length,
-    [filters, rejectedHikeIds],
+      mockMode
+        ? filterCandidates({
+            difficulty: filters.difficulty,
+            maxTravelMinutes: filters.maxTravel,
+            transport: filters.transport,
+            lengthBucket: filters.length ?? undefined,
+            tags: filters.tags,
+            avoid: filters.avoid,
+            rejectedHikeIds,
+          }).length
+        : null,
+    [mockMode, filters, rejectedHikeIds],
   );
 
   const togTag = (id: string) =>
@@ -143,22 +147,24 @@ export function Filters({
             {L.filters}
           </div>
         </div>
-        <div
-          style={{
-            padding: '5px 10px',
-            background: C.snow,
-            borderRadius: 4,
-            border: `1px solid ${C.hairline}`,
-            fontSize: 12,
-            fontWeight: 500,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
-          }}
-        >
-          <Icon name="location" size={11} color={C.vermillion} strokeWidth={2} />
-          {locationLabel ?? 'Ålesund'}
-        </div>
+        {locationLabel && (
+          <div
+            style={{
+              padding: '5px 10px',
+              background: C.snow,
+              borderRadius: 4,
+              border: `1px solid ${C.hairline}`,
+              fontSize: 12,
+              fontWeight: 500,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <Icon name="location" size={11} color={C.vermillion} strokeWidth={2} />
+            {locationLabel}
+          </div>
+        )}
       </div>
 
       <div
@@ -356,13 +362,11 @@ export function Filters({
           }}
         >
           <button onClick={() => setFilters(DEFAULT_FILTERS)} style={resetLink}>
-            {lang === 'no' ? 'Tilbakestill filtre' : 'Reset filters'}
+            {L.resetFilters}
           </button>
           {rejectedHikeIds.length > 0 && (
             <button onClick={onClearRejected} style={resetLink}>
-              {lang === 'no'
-                ? `Tøm avviste turer (${rejectedHikeIds.length})`
-                : `Clear rejected (${rejectedHikeIds.length})`}
+              {L.clearRejected(rejectedHikeIds.length)}
             </button>
           )}
         </div>
@@ -381,9 +385,7 @@ export function Filters({
               lineHeight: 1.45,
             }}
           >
-            {lang === 'no'
-              ? 'Ingen turer passet — løs opp filtrene eller tøm avviste turer.'
-              : 'No hikes match — loosen filters or clear rejected hikes.'}
+            {L.filtersNoMatch}
           </div>
         )}
 
@@ -424,20 +426,22 @@ export function Filters({
             <Icon name="compass" size={18} color={C.vermillionInk} strokeWidth={1.8} />
             {L.findHike}
           </span>
-          <span
-            style={{
-              fontFamily: MONO,
-              fontSize: 11,
-              fontWeight: 600,
-              opacity: 0.85,
-              letterSpacing: 0.5,
-              padding: '4px 8px',
-              background: 'rgba(250,248,242,0.18)',
-              borderRadius: 4,
-            }}
-          >
-            {String(candidateCount).padStart(2, '0')} {L.candidates}
-          </span>
+          {candidateCount !== null && (
+            <span
+              style={{
+                fontFamily: MONO,
+                fontSize: 11,
+                fontWeight: 600,
+                opacity: 0.85,
+                letterSpacing: 0.5,
+                padding: '4px 8px',
+                background: 'rgba(250,248,242,0.18)',
+                borderRadius: 4,
+              }}
+            >
+              {String(candidateCount).padStart(2, '0')} {L.candidates}
+            </span>
+          )}
         </button>
       </div>
     </div>

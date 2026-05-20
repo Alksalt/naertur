@@ -8,6 +8,7 @@ import { Finding } from './screens/Finding';
 import { Result } from './screens/Result';
 import { Detail } from './screens/Detail';
 import { ErrorBanner } from './ErrorBanner';
+import { MockBadge } from '../../components/MockBadge';
 import { randomHike, NoCandidatesError, StaleSearchError } from '../../api/client';
 import type { Location, Screen, UiSearchResponse } from '../../types';
 
@@ -27,6 +28,8 @@ export function MossApp() {
   const [result, setResult] = useState<UiSearchResponse | null>(null);
   const [searchError, setSearchError] = useState<'no_candidates' | 'error' | null>(null);
   const [phase, setPhase] = useState<number>(0);
+  // Bumped on cancel so an in-flight runSearch can detect it should discard.
+  const searchRunId = useRef(0);
 
   const palette = NAERTUR_PALETTES[themeName] ?? NAERTUR_PALETTES.moss;
   const L = I18N[lang];
@@ -54,6 +57,7 @@ export function MossApp() {
 
   const runSearch = useCallback(
     async (overrideRejected?: string[]) => {
+      const myRun = ++searchRunId.current;
       setScreen('finding');
       setPhase(0);
       setSearchError(null);
@@ -74,12 +78,12 @@ export function MossApp() {
           }),
           minDelay,
         ]);
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || myRun !== searchRunId.current) return;
         setResult(r);
         setScreen('result');
       } catch (e) {
         if (e instanceof StaleSearchError) return; // newer search already in flight
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || myRun !== searchRunId.current) return;
         const msg = e instanceof NoCandidatesError ? 'no_candidates' : 'error';
         setSearchError(msg);
         setScreen('filters');
@@ -90,6 +94,11 @@ export function MossApp() {
     },
     [filters, coords, rejected],
   );
+
+  const handleCancelFinding = useCallback(() => {
+    searchRunId.current += 1;
+    setScreen('filters');
+  }, []);
 
   const handleLocationGranted = useCallback(
     (label: string, _sub?: string, c?: Location) => {
@@ -140,7 +149,7 @@ export function MossApp() {
           rejectedHikeIds={rejected}
           onClearRejected={handleClearRejected}
           onBack={() => setScreen('welcome')}
-          onSearch={runSearch}
+          onSearch={() => runSearch()}
         />
         {searchError && (
           <ErrorBanner kind={searchError} onDismiss={() => setSearchError(null)} />
@@ -148,7 +157,7 @@ export function MossApp() {
       </>
     );
   } else if (screen === 'finding') {
-    body = <Finding phase={phase} />;
+    body = <Finding phase={phase} onCancel={handleCancelFinding} />;
   } else if (screen === 'result' && result) {
     body = (
       <Result
@@ -198,6 +207,7 @@ export function MossApp() {
         >
           {body}
         </div>
+        <MockBadge />
       </I18nContext.Provider>
     </ThemeContext.Provider>
   );
