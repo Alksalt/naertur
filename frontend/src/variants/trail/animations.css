@@ -1,0 +1,124 @@
+/* Trail-variant motion. Lifted from
+   design_handoff_naertur_frontend 2/app-trail.jsx:75-127.
+   Spring-physics cubic-beziers — Material 3 Expressive 2025 ethos. */
+
+@keyframes trail-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes trail-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes trail-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes trail-pop {
+  0% {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes trail-ring-pulse {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.7;
+  }
+  80% {
+    opacity: 0.05;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+.ta-tap {
+  transition: transform 180ms cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.ta-tap:active {
+  transform: scale(0.96);
+}
+.ta-card-tap:active {
+  transform: scale(0.985);
+}
+.trail-fade-up {
+  animation: trail-fade-up 420ms cubic-bezier(0.2, 0.85, 0.3, 1.1) both;
+}
+.trail-fade-in {
+  animation: trail-fade-in 380ms ease-out both;
+}
+.trail-pop {
+  animation: trail-pop 520ms cubic-bezier(0.3, 1.5, 0.4, 1) both;
+}
+
+.trail-app * {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+.trail-app button {
+  font-family: inherit;
+}
+
+/* Range slider — trail variant. */
+.trail-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 28px;
+  cursor: pointer;
+  width: 100%;
+}
+.trail-range::-webkit-slider-runnable-track {
+  height: 2px;
+  background: currentColor;
+  opacity: 0.18;
+  border-radius: 2px;
+}
+.trail-range::-moz-range-track {
+  height: 2px;
+  background: currentColor;
+  opacity: 0.18;
+  border-radius: 2px;
+}
+.trail-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--trail-thumb, #c8242c);
+  border: 2.5px solid #faf8f2;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.18);
+  margin-top: -8px;
+}
+.trail-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--trail-thumb, #c8242c);
+  border: 2.5px solid #faf8f2;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.1),
+    0 1px 3px rgba(0, 0, 0, 0.18);
+}
