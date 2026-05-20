@@ -14,13 +14,6 @@ SEASON_MONTHS = {
     "hele aret": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
 }
 
-DIFFICULTY_BY_GRADE = {
-    0: "easy",
-    1: "medium",
-    2: "hard",
-    3: "expert",
-}
-
 DIFFICULTY_BY_NAME = {
     "grønn": "easy",
     "gronn": "easy",
@@ -28,7 +21,10 @@ DIFFICULTY_BY_NAME = {
     "bla": "medium",
     "rød": "hard",
     "rod": "hard",
-    "svart": "expert",
+    # Morotur's "svart" (black) is the steepest band; we map it to "hard"
+    # rather than a separate "expert" because the product surface is 3
+    # buckets, not 4.
+    "svart": "hard",
 }
 
 
@@ -53,14 +49,12 @@ def parse_duration_minutes(value: str | None) -> int | None:
     return total or None
 
 
-def normalize_difficulty(route: dict, summary: dict | None = None) -> str:
+def normalize_difficulty(route: dict) -> str:
     grading = route.get("grading") or []
     if grading:
         name = str(grading[0].get("name", "")).lower()
         if name in DIFFICULTY_BY_NAME:
             return DIFFICULTY_BY_NAME[name]
-    if summary and summary.get("grade") is not None:
-        return DIFFICULTY_BY_GRADE.get(int(summary["grade"]), "medium")
     return "medium"
 
 
@@ -69,6 +63,10 @@ def season_months(seasons: list[str] | None) -> list[int]:
         return []
     months: set[int] = set()
     for season in seasons:
+        # Morotur occasionally returns [None] or mixed lists with non-string
+        # entries; skip those silently rather than crashing the whole import.
+        if not isinstance(season, str):
+            continue
         key = season.lower().strip()
         months.update(SEASON_MONTHS.get(key, []))
     return sorted(months)
@@ -83,10 +81,13 @@ def infer_tags(route: dict, route_geojson: dict, distance_meters: int | None) ->
             "directions",
             "start_point",
             "public_transport",
-            "spiecial_conditions",
+            "special_conditions",
         ]
     ).lower()
     tags: set[str] = set()
+    # Every tag below requires an affirmative textual signal — never tag by
+    # absence. Adding a tag because a description forgot to mention "bratt"
+    # makes us promise things the data doesn't say.
     keyword_tags = {
         "viewpoint": ["utsikt", "panorama", "topp", "varde"],
         "forest": ["skog", "skogen", "skogsveg", "skogsvei"],
@@ -97,6 +98,15 @@ def infer_tags(route: dict, route_geojson: dict, distance_meters: int | None) ->
         "dog_ok": ["hund"],
         "public_transport_possible": ["buss", "kollektiv", "ferje", "hurtigbåt"],
         "steep": ["bratt", "krevende stigning", "luftig"],
+        "not_steep": [
+            "flat",
+            "flatt",
+            "lite stigning",
+            "slak",
+            "slakk",
+            "enkel terreng",
+            "lett terreng",
+        ],
     }
     for tag, keywords in keyword_tags.items():
         if tag == "steep" and any(phrase in text for phrase in ["ikke bratt", "lite bratt"]):
@@ -109,8 +119,6 @@ def infer_tags(route: dict, route_geojson: dict, distance_meters: int | None) ->
 
         if is_loop_route(coordinates):
             tags.add("loop")
-    if "steep" not in tags:
-        tags.add("not_steep")
     if distance_meters is not None:
         if distance_meters < 5_000:
             tags.add("under_5km")

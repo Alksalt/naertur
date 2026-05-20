@@ -17,6 +17,11 @@ class SearchService:
     def __init__(self, safety_service: SafetyService | None = None) -> None:
         self.safety_service = safety_service or SafetyService()
 
+    async def aclose(self) -> None:
+        """Close the underlying SafetyService (and thus its HTTP clients)."""
+
+        await self.safety_service.aclose()
+
     async def random_hike(
         self,
         session: AsyncSession,
@@ -46,8 +51,8 @@ class SearchService:
             hike=hike_summary(selected.hike),
             safety=selected.safety,
             transport=self.transport_result(request, selected.distance_from_user_meters, selected.hike),
-            matchReasons=selected.match_reasons,
-            rejectedReasons=[],
+            match_reasons=selected.match_reasons,
+            rejected_reasons=[],
         )
 
     async def load_hikes(self, session: AsyncSession, request: SearchRequest) -> list[Hike]:
@@ -100,7 +105,10 @@ class SearchService:
         requested = set(request.tags)
         if not requested:
             return True
-        return requested.issubset(set(hike.tags))
+        # Tags are scored preferences, not hard filters: any overlap qualifies
+        # the hike and the randomizer then weights candidates by how many of
+        # the requested tags they actually carry.
+        return bool(requested & set(hike.tags))
 
     @staticmethod
     def matches_avoid(hike: Hike, request: SearchRequest) -> bool:
@@ -145,7 +153,7 @@ class SearchService:
                 reasons.append("source_mentions_public_transport")
         return TransportResult(
             mode=request.transport,
-            estimatedMinutes=estimated,
+            estimated_minutes=estimated,
             status=status,
             reasons=reasons,
         )

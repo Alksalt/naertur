@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -21,47 +20,40 @@ from app.services.normalization import (
 )
 
 
-@dataclass(frozen=True)
-class MoroturRouteSummary:
-    id: int
-    name: str
-    grade: int | None
-    length: str | None
-
-
 class MoroturClient:
     def __init__(self, base_url: str | None = None) -> None:
         settings = get_settings()
         self.base_url = (base_url or settings.morotur_base_url).rstrip("/")
+        # A single httpx.AsyncClient is reused across discover/fetch_route/
+        # fetch_geojson. A 300-route import previously opened ~600 TCP
+        # connections by constructing a new client per call; reusing keeps
+        # the connection pool warm and respects Morotur's edge.
+        self._client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
 
-    async def discover_routes(self, limit: int = 25, tour_type: int = 0) -> list[MoroturRouteSummary]:
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def __aenter__(self) -> MoroturClient:
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        await self.aclose()
+
+    async def discover_routes(self, limit: int = 25, tour_type: int = 0) -> list[int]:
         url = f"{self.base_url}/api/v2/routes"
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(url, params={"tour_type": tour_type})
-            response.raise_for_status()
+        response = await self._client.get(url, params={"tour_type": tour_type})
+        response.raise_for_status()
         routes = response.json()
-        summaries: list[MoroturRouteSummary] = []
-        for item in routes[:limit]:
-            summaries.append(
-                MoroturRouteSummary(
-                    id=int(item["id"]),
-                    name=str(item.get("name") or ""),
-                    grade=item.get("grade"),
-                    length=item.get("length"),
-                )
-            )
-        return summaries
+        return [int(item["id"]) for item in routes[:limit]]
 
     async def fetch_route(self, route_id: int) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(f"{self.base_url}/api/v2/routes/{route_id}")
-            response.raise_for_status()
+        response = await self._client.get(f"{self.base_url}/api/v2/routes/{route_id}")
+        response.raise_for_status()
         return response.json()
 
     async def fetch_geojson(self, route_id: int) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(f"{self.base_url}/api/v2/geojson/{route_id}")
-            response.raise_for_status()
+        response = await self._client.get(f"{self.base_url}/api/v2/geojson/{route_id}")
+        response.raise_for_status()
         payload = response.json()
         if isinstance(payload, list) and payload:
             return payload[0]
@@ -79,14 +71,40 @@ class MoroturImporter:
         failed = 0
         errors: list[str] = []
         for route_id in route_ids:
+            # Per-route savepoint: a route that raises partway through (e.g.
+            # malformed GeoJSON after a Hike row has already been flushed) is
+            # rolled back to a clean state before we record the failure.
+            # Without this, the outer commit would persist orphaned hike rows
+            # missing their hike_geometries — which then crashes
+            # /api/search/random with AttributeError on route_geojson.
+            savepoint = await session.begin_nested()
             try:
                 await self.import_route(session, route_id)
-                imported += 1
             except Exception as exc:
+                await savepoint.rollback()
                 failed += 1
                 errors.append(f"{route_id}: {exc}")
+                # Record the failure in its own savepoint so we have a DB trail
+                # even when the route payload itself never made it into the
+                # primary tables.
+                failure_savepoint = await session.begin_nested()
+                try:
+                    await self.upsert_source_record(
+                        session,
+                        {"id": route_id, "slug": None},
+                        {},
+                        "failed",
+                        str(exc),
+                    )
+                    await failure_savepoint.commit()
+                except Exception as record_exc:
+                    await failure_savepoint.rollback()
+                    errors.append(f"{route_id} (failure record): {record_exc}")
+            else:
+                await savepoint.commit()
+                imported += 1
         await session.commit()
-        return {"imported": imported, "failed": failed, "routeIds": route_ids, "errors": errors}
+        return {"imported": imported, "failed": failed, "route_ids": route_ids, "errors": errors}
 
     async def import_route(self, session: AsyncSession, route_id: int) -> Hike:
         route = await self.client.fetch_route(route_id)
@@ -113,7 +131,13 @@ class MoroturImporter:
             .options(selectinload(Hike.geometry))
             .where(Hike.source == "morotur", Hike.source_id == source_id)
         )
-        if existing is None:
+        # Capture is_new BEFORE flush so we can decide create-vs-mutate on the
+        # geometry without re-reading hike.geometry on a freshly-flushed row.
+        # An async lazy-load triggered from outside an async loop raises
+        # `greenlet_spawn has not been called`, which broke 11/20 routes in
+        # the live smoke test.
+        is_new = existing is None
+        if is_new:
             hike = Hike(source="morotur", source_id=source_id, source_url=source_url, name=route["name"])
             session.add(hike)
         else:
@@ -134,13 +158,12 @@ class MoroturImporter:
         hike.season_months = season_months(route.get("seasons"))
         hike.tags = tags
         hike.transport_notes = strip_html(route.get("public_transport"))
-        hike.quality_score = self.quality_score(route, geojson, distance_meters)
         await session.flush()
 
         route_element = WKTElement(linestring_wkt(coordinates), srid=4326)
         trailhead_lon, trailhead_lat = coordinates[0][:2]
         trailhead_element = WKTElement(point_wkt(trailhead_lon, trailhead_lat), srid=4326)
-        if hike.geometry is None:
+        if is_new:
             hike.geometry = HikeGeometry(
                 hike_id=hike.id,
                 route=route_element,
@@ -148,6 +171,8 @@ class MoroturImporter:
                 route_geojson=geojson,
             )
         else:
+            # Existing rows already preloaded `geometry` via selectinload above,
+            # so this attribute access never triggers a lazy I/O.
             hike.geometry.route = route_element
             hike.geometry.trailhead = trailhead_element
             hike.geometry.route_geojson = geojson
@@ -181,20 +206,3 @@ class MoroturImporter:
         record.payload = {"route": route, "geojson": geojson}
         record.import_status = status
         record.error = error
-
-    @staticmethod
-    def quality_score(route: dict, geojson: dict, distance_meters: int | None) -> int:
-        score = 0
-        if route.get("tour_description") or route.get("tour_description_html"):
-            score += 20
-        if route.get("start_point"):
-            score += 15
-        if route.get("seasons"):
-            score += 20
-        if route.get("grading"):
-            score += 10
-        if distance_meters:
-            score += 15
-        if geojson.get("geometry", {}).get("coordinates"):
-            score += 20
-        return score

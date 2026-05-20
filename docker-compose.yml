@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgis/postgis:16-3.5
+    # imresamu/postgis publishes multi-arch manifests (amd64 + arm64/v8) so
+    # Apple Silicon devs don't need DOCKER_DEFAULT_PLATFORM=linux/amd64.
+    # postgis/postgis:16-3.5 is amd64-only and emulates very slowly on M-series.
+    image: imresamu/postgis:16-3.5
     environment:
       POSTGRES_DB: naertur
       POSTGRES_USER: naertur
