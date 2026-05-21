@@ -16,4 +16,5 @@ build/
 !frontend/public/*.png
 frontend/tsconfig*.tsbuildinfo
 node_modules/
+.wrangler/
 
